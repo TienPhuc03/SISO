@@ -1,0 +1,59 @@
+services:
+  siso-db:
+    image: postgis/postgis:15-3.3
+    container_name: siso-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-siso_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-siso_password_2026}
+      POSTGRES_DB: ${DB_NAME:-siso_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - siso_pgdata:/var/lib/postgresql/data
+      - ./src/database/init_schema.sql:/docker-entrypoint-initdb.d/init_schema.sql
+    networks:
+      - siso-network
+
+  siso-redis:
+    image: redis:7-alpine
+    container_name: siso-redis
+    restart: always
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - siso_redisdata:/data
+    networks:
+      - siso-network
+
+  siso-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: siso-api
+    restart: always
+    environment:
+      PORT: 3000
+      DB_HOST: siso-db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-siso_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-siso_password_2026}
+      DB_NAME: ${DB_NAME:-siso_db}
+      REDIS_HOST: siso-redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-siso_super_secret_jwt_key_2026}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - siso-db
+      - siso-redis
+    networks:
+      - siso-network
+
+volumes:
+  siso_pgdata:
+  siso_redisdata:
+
+networks:
+  siso-network:
+    driver: bridge

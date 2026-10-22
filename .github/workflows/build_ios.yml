@@ -1,0 +1,41 @@
+name: Build Unsigned iOS IPA (For Sideloadly)
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+jobs:
+  build_ios:
+    name: Build iOS .ipa on macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build iOS (No Codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package Runner.app into Runner.ipa
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r -y Runner.ipa Payload
+
+      - name: Upload Runner.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SISO-Runner-IPA
+          path: Runner.ipa
+          retention-days: 14

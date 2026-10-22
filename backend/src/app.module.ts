@@ -1,0 +1,48 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './modules/auth/auth.module';
+import { TelemetryModule } from './modules/telemetry/telemetry.module';
+import { TurfModule } from './modules/turf/turf.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
+
+import { University } from './entities/university.entity';
+import { User } from './entities/user.entity';
+import { H3Hexagon } from './entities/h3-hexagon.entity';
+import { Arena } from './entities/arena.entity';
+import { RunningSession } from './entities/running-session.entity';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => {
+        const isSsl = configService.get<string>('DB_SSL', 'false') === 'true';
+        return {
+          type: 'postgres',
+          host: configService.get<string>('DB_HOST', 'localhost'),
+          port: configService.get<number>('DB_PORT', 5432),
+          username: configService.get<string>('DB_USER', 'postgres'),
+          password: configService.get<string>('DB_PASSWORD', 'siso_password_2026'),
+          database: configService.get<string>('DB_NAME', 'postgres'),
+          entities: [University, User, H3Hexagon, Arena, RunningSession],
+          synchronize: false, // Dùng schema đã init từ file SQL trên Supabase
+          logging: configService.get<string>('NODE_ENV') === 'development',
+          ssl: isSsl ? { rejectUnauthorized: false } : false,
+        };
+      },
+      inject: [ConfigService],
+    }),
+    AuthModule,
+    TelemetryModule,
+    TurfModule,
+    RealtimeModule,
+    LeaderboardModule,
+  ],
+})
+export class AppModule {}

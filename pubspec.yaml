@@ -1,0 +1,38 @@
+name: siso_project
+description: "SISO (Step In Step Out) - Gamified Running & Campus Turf War App"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+
+  # Network & Realtime (Independent Custom Backend)
+  dio: ^5.4.3+1
+  socket_io_client: ^2.0.3+1
+  flutter_dotenv: ^5.1.0
+
+  # Map & Spatial Indexing (Uber H3 + CartoDB)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  h3_flutter: ^0.6.3
+
+  # Hardware Sensors & Location (Anti-GIGO Telemetry)
+  geolocator: ^12.0.0
+  sensors_plus: ^5.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
