@@ -51,3 +51,10 @@ app.*.map.json
 # Supabase local development
 supabase/.branches
 supabase/.temp
+
+# Node.js related
+node_modules/
+backend/node_modules/
+backend/.env
+backend/dist/
+dist/

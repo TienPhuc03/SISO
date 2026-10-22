@@ -23,15 +23,21 @@ import { RunningSession } from './entities/running-session.entity';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
         const isSsl = configService.get<string>('DB_SSL', 'false') === 'true';
+        const databaseUrl = configService.get<string>('DATABASE_URL');
+
         return {
           type: 'postgres',
-          host: configService.get<string>('DB_HOST', 'localhost'),
-          port: configService.get<number>('DB_PORT', 5432),
-          username: configService.get<string>('DB_USER', 'postgres'),
-          password: configService.get<string>('DB_PASSWORD', 'siso_password_2026'),
-          database: configService.get<string>('DB_NAME', 'postgres'),
+          ...(databaseUrl
+            ? { url: databaseUrl }
+            : {
+                host: configService.get<string>('DB_HOST', 'localhost'),
+                port: configService.get<number>('DB_PORT', 5432),
+                username: configService.get<string>('DB_USER', 'postgres'),
+                password: configService.get<string>('DB_PASSWORD', 'siso_password_2026'),
+                database: configService.get<string>('DB_NAME', 'postgres'),
+              }),
           entities: [University, User, H3Hexagon, Arena, RunningSession],
-          synchronize: false, // Dùng schema đã init từ file SQL trên Supabase
+          synchronize: false,
           logging: configService.get<string>('NODE_ENV') === 'development',
           ssl: isSsl ? { rejectUnauthorized: false } : false,
         };
