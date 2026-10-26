@@ -4,9 +4,9 @@ services:
     container_name: siso-postgres
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER:-siso_admin}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-siso_password_2026}
-      POSTGRES_DB: ${DB_NAME:-siso_db}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
@@ -34,14 +34,16 @@ services:
     restart: always
     environment:
       PORT: 3000
-      DB_HOST: siso-db
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-siso_admin}
-      DB_PASSWORD: ${DB_PASSWORD:-siso_password_2026}
-      DB_NAME: ${DB_NAME:-siso_db}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DATABASE_URL: ${DATABASE_URL}
+      DB_SSL: ${DB_SSL}
       REDIS_HOST: siso-redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-siso_super_secret_jwt_key_2026}
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "3000:3000"
     depends_on:
