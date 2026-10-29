@@ -12,6 +12,9 @@ import { User } from './entities/user.entity';
 import { H3Hexagon } from './entities/h3-hexagon.entity';
 import { Arena } from './entities/arena.entity';
 import { RunningSession } from './entities/running-session.entity';
+import { Season } from './entities/season.entity';
+import { HallOfFame } from './entities/hall-of-fame.entity';
+import { GigoAuditLog } from './entities/gigo-audit-log.entity';
 
 @Module({
   imports: [
@@ -36,7 +39,16 @@ import { RunningSession } from './entities/running-session.entity';
                 password: configService.get<string>('DB_PASSWORD'),
                 database: configService.get<string>('DB_NAME'),
               }),
-          entities: [University, User, H3Hexagon, Arena, RunningSession],
+          entities: [
+            University,
+            User,
+            H3Hexagon,
+            Arena,
+            RunningSession,
+            Season,
+            HallOfFame,
+            GigoAuditLog,
+          ],
           synchronize: false,
           logging: configService.get<string>('NODE_ENV') === 'development',
           ssl: isSsl ? { rejectUnauthorized: false } : false,

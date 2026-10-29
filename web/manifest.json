@@ -1,0 +1,19 @@
+{
+    "name": "SISO — Step In Step Out",
+    "short_name": "SISO",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#121212",
+    "theme_color": "#FFCC00",
+    "description": "SISO (Step In Step Out) - Gamified Running & Campus Turf War",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "favicon.png",
+            "sizes": "192x192 512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

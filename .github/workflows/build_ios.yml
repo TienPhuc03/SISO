@@ -21,6 +21,12 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Prepare Environment Configuration (.env)
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example .env
+          fi
+
       - name: Install Dependencies
         run: flutter pub get
 
