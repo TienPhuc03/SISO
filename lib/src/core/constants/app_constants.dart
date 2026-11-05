@@ -13,6 +13,11 @@ class AppConstants {
   static String get campusBoundary =>
       dotenv.env['CAMPUS_BOUNDARY'] ?? 'BINH_THANH';
 
+  /// Tile bản đồ nền. Tạm dùng OSM chuẩn (không cần key) cho tới khi
+  /// ticket wayfinder #16 chốt nguồn tile (Carto đang đòi API key).
+  static const String mapTileUrl =
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
   /// Danh sách email domain hợp lệ của 5 trường Bình Thạnh
   static const List<String> allowedCampusDomains = [
     'hutech.edu.vn',
