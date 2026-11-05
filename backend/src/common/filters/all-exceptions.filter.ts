@@ -11,7 +11,7 @@ import { Request, Response } from 'express';
 /**
  * [Ngày 2 - Dev 2] Global Exception Filter
  * - Chuẩn hóa phản hồi lỗi toàn hệ thống theo cấu trúc thống nhất.
- * - Giữ nguyên mã lỗi nghiệp vụ SISO (ERR_101 -> ERR_302) đối với HttpException.
+ * - Giữ nguyên mã lỗi nghiệp vụ SISO (ERR_101 -> ERR_303) đối với HttpException.
  * - Tuyệt đối ẩn chi tiết nội bộ (SQL query, stack trace, đường dẫn hệ thống) khi xảy ra lỗi 500 (Security Checklist).
  */
 @Catch()

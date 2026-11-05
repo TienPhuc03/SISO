@@ -1,19 +1,31 @@
-import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Controller, Post, Get, Body, Query, UseGuards, Request, ParseUUIDPipe } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
 import { TurfService } from './turf.service';
 import { ClaimLoopDto } from './dto/claim-loop.dto';
+import { ArenaListResponseDto, HexagonListResponseDto } from './dto/turf-response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BaseResponseDto } from '../../common/dto/base-response.dto';
 
 @ApiTags('Turf')
 @Controller('api/v1/turf')
 export class TurfController {
   constructor(private readonly turfService: TurfService) {}
 
+  @Get('arenas')
+  @ApiOperation({ summary: 'Danh sách Đấu trường đang hoạt động (số ô thật + ranh giới GeoJSON)' })
+  @ApiOkResponse({ type: ArenaListResponseDto })
+  async getArenas() {
+    return BaseResponseDto.ok('Lấy danh sách Đấu trường thành công.', await this.turfService.getArenas());
+  }
+
   @Get('hexagons')
   @ApiOperation({ summary: 'Lấy trạng thái các ô lục giác H3 trên bản đồ' })
-  @ApiQuery({ name: 'arenaId', required: false, description: 'Lọc theo ID Đấu trường' })
-  async getHexagons(@Query('arenaId') arenaId?: string) {
-    return this.turfService.getArenaHexagons(arenaId);
+  @ApiQuery({ name: 'arenaId', required: false, description: 'UUID Đấu trường; bỏ trống để lấy toàn bộ ô' })
+  @ApiOkResponse({ type: HexagonListResponseDto })
+  @ApiResponse({ status: 400, description: 'arenaId không phải UUID' })
+  @ApiResponse({ status: 404, description: 'ERR_303: Không tìm thấy Đấu trường' })
+  async getHexagons(@Query('arenaId', new ParseUUIDPipe({ optional: true })) arenaId?: string) {
+    return BaseResponseDto.ok('Lấy trạng thái ô đất thành công.', await this.turfService.getArenaHexagons(arenaId));
   }
 
   @Post('claim-loop')
