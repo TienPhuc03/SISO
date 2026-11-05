@@ -3,15 +3,25 @@ import 'package:siso_project/src/core/network/socket_manager.dart';
 
 /// [Dev 2] Repository truy vấn & lắng nghe Realtime các ô lục giác H3 từ NestJS Backend
 class HexagonRepository {
-  /// Lấy danh sách ô lục giác H3 trong khu vực Đấu trường từ NestJS API
+  /// Lấy các ô lục giác H3 (bỏ trống [arenaId] để lấy toàn bộ). Lỗi hoặc sai dạng → mảng rỗng.
   Future<List<Map<String, dynamic>>> fetchArenaHexagons([String? arenaId]) async {
     try {
       final response = await ApiClient.dio.get(
         '/api/v1/turf/hexagons',
         queryParameters: arenaId != null ? {'arenaId': arenaId} : null,
       );
-      final List list = response.data as List;
-      return list.cast<Map<String, dynamic>>();
+      return parseListPayload(response.data);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Lấy danh sách Đấu trường đang hoạt động (`id`, `name`, `description`, `hexCount`, `boundary`).
+  /// Lỗi hoặc sai dạng → mảng rỗng.
+  Future<List<Map<String, dynamic>>> fetchArenas() async {
+    try {
+      final response = await ApiClient.dio.get('/api/v1/turf/arenas');
+      return parseListPayload(response.data);
     } catch (e) {
       return [];
     }
@@ -21,4 +31,16 @@ class HexagonRepository {
   void subscribeHexClaimed(Function(dynamic event) onClaimed) {
     SocketManager.onHexClaimed(onClaimed);
   }
+}
+
+/// Đọc mảng trong `BaseResponseDto` của backend: `{ success, message, data: [...], timestamp }`.
+/// `success` khác true, thiếu `data` hoặc phần tử không phải object → bỏ qua.
+List<Map<String, dynamic>> parseListPayload(Object? body) {
+  if (body is! Map || body['success'] != true) return [];
+  final data = body['data'];
+  if (data is! List) return [];
+  return [
+    for (final item in data)
+      if (item is Map) Map<String, dynamic>.from(item),
+  ];
 }

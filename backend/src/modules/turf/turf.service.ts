@@ -8,6 +8,11 @@ import { RunningSession } from '../../entities/running-session.entity';
 import { H3Service } from './h3.service';
 import { TurfGateway } from '../realtime/turf.gateway';
 import { ClaimLoopDto } from './dto/claim-loop.dto';
+import { Arena } from '../../entities/arena.entity';
+import { ArenaResponseDto, HexagonResponseDto } from './dto/turf-response.dto';
+
+/** Màu ô trung lập; khớp CampusColors.neutralHex phía client. */
+export const NEUTRAL_HEX_COLOR = '#44FFFFFF';
 
 @Injectable()
 export class TurfService {
@@ -20,28 +25,57 @@ export class TurfService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(RunningSession)
     private readonly sessionRepository: Repository<RunningSession>,
+    @InjectRepository(Arena)
+    private readonly arenaRepository: Repository<Arena>,
     private readonly h3Service: H3Service,
     private readonly turfGateway: TurfGateway,
   ) {}
 
-  async getArenaHexagons(arenaId?: string) {
-    const query = this.hexRepository
-      .createQueryBuilder('hex')
-      .leftJoinAndSelect('hex.ownerUniversity', 'uni');
-
-    if (arenaId) {
-      query.where('hex.arena_id = :arenaId', { arenaId });
+  /**
+   * Trạng thái các ô H3. Bỏ trống `arenaId` thì trả toàn bộ ô (client tải một lần, ticket #6).
+   * `arenaId` không tồn tại → 404 ERR_303.
+   */
+  async getArenaHexagons(arenaId?: string): Promise<HexagonResponseDto[]> {
+    if (arenaId && !(await this.arenaRepository.exists({ where: { id: arenaId } }))) {
+      throw new NotFoundException({
+        code: 'ERR_303',
+        message: 'ARENA_NOT_FOUND: Không tìm thấy Đấu trường.',
+      });
     }
 
-    const hexes = await query.getMany();
+    const hexes = await this.hexRepository.find({
+      where: arenaId ? { arena_id: arenaId } : {},
+      relations: ['ownerUniversity'],
+    });
+
     return hexes.map((h) => ({
       h3Index: h.h3_index,
-      ownerUniversityId: h.owner_university_id,
-      universityCode: h.ownerUniversity?.short_code || null,
-      hexColor: h.ownerUniversity?.hex_color || '#44FFFFFF',
+      arenaId: h.arena_id ?? null,
+      ownerUniversityId: h.owner_university_id ?? null,
+      universityCode: h.ownerUniversity?.short_code ?? null,
+      hexColor: h.ownerUniversity?.hex_color ?? NEUTRAL_HEX_COLOR,
       shieldHp: h.shield_hp,
       lastPatrolledAt: h.last_patrolled_at,
     }));
+  }
+
+  /** Danh sách Đấu trường đang hoạt động, kèm số ô đếm thật và ranh giới GeoJSON. */
+  async getArenas(): Promise<ArenaResponseDto[]> {
+    const arenas = await this.arenaRepository.find({
+      where: { is_active: true },
+      order: { name: 'ASC' },
+    });
+
+    // Chỉ vài Đấu trường nên đếm từng cái là đủ, không cần GROUP BY.
+    return Promise.all(
+      arenas.map(async (a) => ({
+        id: a.id,
+        name: a.name,
+        description: a.description ?? null,
+        hexCount: await this.hexRepository.count({ where: { arena_id: a.id } }),
+        boundary: a.boundary_polygon ?? null,
+      })),
+    );
   }
 
   async claimLoop(userId: string, dto: ClaimLoopDto) {
