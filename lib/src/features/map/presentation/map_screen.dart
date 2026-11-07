@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../auth/presentation/logout_button.dart';
 import 'hexagon_layer.dart';
 import 'percent_dominance_bar.dart';
 
@@ -20,6 +21,7 @@ class MapScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('SISO — Đại Chiến Bình Thạnh'),
         centerTitle: true,
+        actions: const [LogoutButton()],
       ),
       body: Stack(
         children: [
