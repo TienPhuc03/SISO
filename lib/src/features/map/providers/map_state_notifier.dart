@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:latlong2/latlong.dart';
+
+import '../../../core/constants/colors.dart';
 import '../data/hexagon_repository.dart';
 import '../domain/h3_boundary.dart';
 import '../domain/hex_cell.dart';
@@ -11,32 +14,85 @@ import '../domain/hex_cell.dart';
 class MapStateNotifier extends StateNotifier<Map<String, HexCell>> {
   MapStateNotifier({
     required HexagonRepository repository,
-    required HexBoundaryFn boundaryOf,
+    required HexBoundariesFn boundariesOf,
+    SyntheticCellsFn syntheticCells = syntheticCellsAround,
   })  : _repository = repository,
-        _boundaryOf = boundaryOf,
+        _boundariesOf = boundariesOf,
+        _syntheticCells = syntheticCells,
         super(const {});
 
   final HexagonRepository _repository;
-  final HexBoundaryFn _boundaryOf;
+  final HexBoundariesFn _boundariesOf;
+  final SyntheticCellsFn _syntheticCells;
 
-  /// Tải toàn bộ ô từ backend (chưa lọc theo Đấu trường).
+  /// Các ô giả đang hiển thị (chỉ có khi bật chế độ đo hiệu năng).
+  final Set<String> _syntheticIds = {};
+  int get syntheticCount => _syntheticIds.length;
+
+  /// Tải toàn bộ ô từ backend (tất cả Đấu trường đang có, chưa lọc).
+  /// Ranh giới của cả lô được tính một lượt trong Isolate phụ; ô có `h3Index` không hợp lệ bị bỏ.
   Future<void> loadHexagons() async {
     final rows = await _repository.fetchArenaHexagons();
     if (!mounted) return;
 
+    final validRows = [
+      for (final row in rows)
+        if (row['h3Index'] case final String h3Index when h3Index.isNotEmpty) (h3Index, row),
+    ];
+    final boundaries = await _boundariesOf([for (final (h3Index, _) in validRows) h3Index]);
+    if (!mounted) return;
+
     final cells = <String, HexCell>{};
-    for (final row in rows) {
-      final h3Index = row['h3Index'];
-      if (h3Index is! String || h3Index.isEmpty) continue;
+    for (final (h3Index, row) in validRows) {
+      final boundary = boundaries[h3Index];
+      if (boundary == null || boundary.isEmpty) continue;
       cells[h3Index] = HexCell(
         h3Index: h3Index,
         universityId: row['ownerUniversityId'] as String?,
         color: parseHexColor(row['hexColor']),
         shieldHp: (row['shieldHp'] as num?)?.toInt() ?? 100,
-        boundary: _boundaryOf(h3Index),
+        boundary: boundary,
       );
     }
-    state = cells;
+    // Giữ các ô đã thêm trước đó (vd. ô giả của bảng đo hiệu năng) nếu tải xong muộn hơn.
+    state = {...state, ...cells};
+  }
+
+  /// Chế độ đo hiệu năng: thêm ô giả quanh [center] cho tới khi bản đồ có đủ [targetTotal] ô.
+  /// Ô giả trùng ô thật bị bỏ qua (ô thật giữ nguyên). Chỉ nằm trong bộ nhớ, không gửi backend.
+  Future<void> addSyntheticCells({required LatLng center, int targetTotal = 500}) async {
+    removeSyntheticCells();
+    final missing = targetTotal - state.length;
+    if (missing <= 0) return;
+
+    // Xin dư để bù các ô trùng với ô thật.
+    final generated = await _syntheticCells(center, missing + state.length);
+    if (!mounted) return;
+
+    final next = Map<String, HexCell>.of(state);
+    for (final MapEntry(key: h3Index, value: boundary) in generated.entries) {
+      if (next.length >= targetTotal) break;
+      if (next.containsKey(h3Index) || boundary.isEmpty) continue;
+      next[h3Index] = HexCell(
+        h3Index: h3Index,
+        universityId: null,
+        color: CampusColors.neutralHex,
+        shieldHp: 100,
+        boundary: boundary,
+      );
+      _syntheticIds.add(h3Index);
+    }
+    state = next;
+  }
+
+  /// Gỡ toàn bộ ô giả, trả bản đồ về dữ liệu thật.
+  void removeSyntheticCells() {
+    if (_syntheticIds.isEmpty || !mounted) return;
+    state = {
+      for (final entry in state.entries)
+        if (!_syntheticIds.contains(entry.key)) entry.key: entry.value,
+    };
+    _syntheticIds.clear();
   }
 
   /// Áp sự kiện `hex_claimed` từ WebSocket:
@@ -72,7 +128,7 @@ final mapStateNotifierProvider =
     StateNotifierProvider<MapStateNotifier, Map<String, HexCell>>((ref) {
   final notifier = MapStateNotifier(
     repository: ref.watch(hexagonRepositoryProvider),
-    boundaryOf: h3BoundaryOf,
+    boundariesOf: h3BoundariesInIsolate,
   );
   notifier.loadHexagons();
   notifier.subscribeRealtime();

@@ -30,10 +30,14 @@ List<Map<String, dynamic>> _rows() => [
       {'h3Index': '8a65b5600017fff', 'ownerUniversityId': null, 'hexColor': 'không-phải-màu', 'shieldHp': 100},
     ];
 
-List<LatLng> _fakeBoundary(String _) => const [LatLng(10.8, 106.7)];
+/// Ranh giới giả: mọi ô hợp lệ trừ ô bắt đầu bằng `bad`.
+Future<Map<String, List<LatLng>>> _fakeBoundaries(List<String> h3Indexes) async => {
+      for (final h in h3Indexes)
+        if (!h.startsWith('bad')) h: const [LatLng(10.8, 106.7)],
+    };
 
 Future<MapStateNotifier> _loaded(FakeHexagonRepository repo) async {
-  final notifier = MapStateNotifier(repository: repo, boundaryOf: _fakeBoundary);
+  final notifier = MapStateNotifier(repository: repo, boundariesOf: _fakeBoundaries);
   await notifier.loadHexagons();
   return notifier;
 }
@@ -70,6 +74,31 @@ void main() {
         ..._rows(),
       ]));
 
+      expect(notifier.state, hasLength(3));
+    });
+
+    test('bỏ qua ô có h3Index không hợp lệ (không tính được ranh giới)', () async {
+      final notifier = await _loaded(FakeHexagonRepository([
+        {'h3Index': 'bad-index', 'ownerUniversityId': null, 'hexColor': '#44FFFFFF'},
+        ..._rows(),
+      ]));
+
+      expect(notifier.state, hasLength(3));
+      expect(notifier.state.containsKey('bad-index'), isFalse);
+    });
+
+    test('tính ranh giới cả lô trong một lần gọi', () async {
+      var calls = 0;
+      final notifier = MapStateNotifier(
+        repository: FakeHexagonRepository(_rows()),
+        boundariesOf: (ids) {
+          calls++;
+          return _fakeBoundaries(ids);
+        },
+      );
+      await notifier.loadHexagons();
+
+      expect(calls, 1);
       expect(notifier.state, hasLength(3));
     });
 
