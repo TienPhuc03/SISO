@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/core/network/api_client.dart';
 import 'src/core/network/socket_manager.dart';
-import 'src/features/map/presentation/map_screen.dart';
+import 'src/features/auth/presentation/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +32,7 @@ class SisoApp extends StatelessWidget {
       title: 'SISO - Step In Step Out',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
-      home: const MapScreen(),
+      home: const AuthGate(),
     );
   }
 }
