@@ -23,6 +23,9 @@ class SisoErrorCodes {
   /// ERR_203: Độ sai số vệ tinh > 20m (trong nhà/dưới hầm)
   static const String gpsAccuracyLow = 'ERR_203';
 
+  /// ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc Phiên chạy đã kết thúc
+  static const String sessionNotFound = 'ERR_204';
+
   /// ERR_301: Diện tích vòng khép vượt giới hạn 150 ô H3
   static const String loopTooLarge = 'ERR_301';
 

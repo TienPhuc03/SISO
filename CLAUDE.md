@@ -14,6 +14,7 @@ Backend (run in `backend/`):
 - `npm install`, `npm run start:dev` (watch mode; Swagger at `/docs`, Socket.io at `/turf-ws`), `npm run build`
 - `npm test`; single file: `npx jest anti-gigo.service.spec`; single test: `npx jest -t "<test name>"` (jest `rootDir` is `src`, matches `*.spec.ts`)
 - `docker-compose up -d` runs Postgres/PostGIS + Redis + API locally (loads `src/database/init_schema.sql` on init)
+- `npm run seed:hexagons` prints the H3 res 10 cells per arena from `src/database/arenas.geojson` (dry-run); add `-- --apply` to upsert arenas and insert `h3_hexagons` into the DB in `backend/.env` (idempotent, keeps owners/HP)
 
 Client (repo root):
 - `flutter pub get`, `flutter run -d chrome` (or a device), `flutter test`, `flutter test test/gigo_filter_test.dart`, `flutter analyze`
