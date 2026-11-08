@@ -176,16 +176,62 @@ CREATE TABLE IF NOT EXISTS public.running_sessions (
     user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
     arena_id UUID REFERENCES public.arenas(id) ON DELETE SET NULL,
     session_type VARCHAR(20) DEFAULT 'ARENA_LOOP',
-    distance_meters FLOAT NOT NULL CHECK (distance_meters >= 0),
-    duration_seconds INT NOT NULL CHECK (duration_seconds > 0),
+    distance_meters FLOAT NOT NULL DEFAULT 0 CHECK (distance_meters >= 0),
+    duration_seconds INT NOT NULL DEFAULT 0 CONSTRAINT running_sessions_duration_nonnegative CHECK (duration_seconds >= 0),
     hex_count INT DEFAULT 0,
     is_valid BOOLEAN DEFAULT TRUE,
     rejection_reason VARCHAR(50),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    -- [Module 4] Phiên chạy được kiểm định theo từng cửa sổ 256 mẫu (ACTIVE -> REJECTED | COMPLETED)
+    status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED'
+        CONSTRAINT running_sessions_status_check CHECK (status IN ('ACTIVE', 'REJECTED', 'COMPLETED')),
+    consecutive_biometric_failures INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS arena_id UUID REFERENCES public.arenas(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON public.running_sessions(user_id);
+
+-- [Module 4] Nâng cấp bảng cũ: thêm trạng thái Phiên chạy và bộ đếm cửa sổ không qua Cổng Sinh trắc.
+-- Mặc định 'COMPLETED' để các dòng cũ (và claim-loop hiện tại, chưa gửi status) không bị coi là đang chạy.
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED';
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS consecutive_biometric_failures INT NOT NULL DEFAULT 0;
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE public.running_sessions ALTER COLUMN distance_meters SET DEFAULT 0;
+ALTER TABLE public.running_sessions ALTER COLUMN duration_seconds SET DEFAULT 0;
+
+-- Phiên chạy được tạo ở cửa sổ đầu tiên với thời lượng 0, nên bỏ ràng buộc cũ duration_seconds > 0.
+DO $$
+DECLARE
+    old_check TEXT;
+BEGIN
+    FOR old_check IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'public.running_sessions'::regclass
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) ILIKE '%duration_seconds > 0%'
+    LOOP
+        EXECUTE format('ALTER TABLE public.running_sessions DROP CONSTRAINT %I', old_check);
+    END LOOP;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.running_sessions'::regclass
+          AND conname = 'running_sessions_duration_nonnegative'
+    ) THEN
+        ALTER TABLE public.running_sessions
+            ADD CONSTRAINT running_sessions_duration_nonnegative CHECK (duration_seconds >= 0);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.running_sessions'::regclass
+          AND conname = 'running_sessions_status_check'
+    ) THEN
+        ALTER TABLE public.running_sessions
+            ADD CONSTRAINT running_sessions_status_check CHECK (status IN ('ACTIVE', 'REJECTED', 'COMPLETED'));
+    END IF;
+END $$;
 
 -- ============================================================================
 -- 6. BẢNG NHẬT KÝ CHẶN DỮ LIỆU RÁC (GIGO_AUDIT_LOGS)
