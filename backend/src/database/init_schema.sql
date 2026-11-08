@@ -79,6 +79,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_arenas_name_unique ON public.arenas(name);
 CREATE INDEX IF NOT EXISTS idx_arenas_boundary ON public.arenas USING GIST (boundary_polygon);
 
 -- Seed Đấu trường Bình Thạnh & Lân cận (kèm đa giác ranh giới chuẩn PostGIS SRID 4326)
+-- Ranh giới ở đây là hình chữ nhật xấp xỉ, total_hexes ghi tay. Ranh giới chuẩn (OSM) và các ô H3 nạp bằng
+-- `npm run seed:hexagons -- --apply` (đọc src/database/arenas.geojson, tính lại total_hexes theo số ô thật).
 INSERT INTO public.arenas (name, description, boundary_polygon, total_hexes)
 VALUES
     (
