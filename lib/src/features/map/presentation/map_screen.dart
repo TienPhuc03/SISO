@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../tracking/presentation/active_run_screen.dart';
 import 'hexagon_layer.dart';
 import 'percent_dominance_bar.dart';
 
@@ -47,6 +48,13 @@ class MapScreen extends StatelessWidget {
             child: PercentDominanceBar(),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const ActiveRunScreen()),
+        ),
+        icon: const Icon(Icons.directions_run),
+        label: const Text('Chạy'),
       ),
     );
   }
