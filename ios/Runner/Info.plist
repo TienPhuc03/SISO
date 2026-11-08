@@ -30,6 +30,12 @@
 	<string>SISO cần quyền truy cập vị trí GPS để ghi nhận lộ trình chạy bộ và chiếm ô lục giác H3 cho trường của bạn.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SISO cần quyền truy cập vị trí ngay cả khi khóa màn hình để không làm gián đoạn vòng chạy chiếm đất.</string>
+	<!-- Chỉ cho bản test dev (IPA Sideloadly): cho phép gọi backend qua http:// (IP LAN). Trước khi lên App Store phải gỡ. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSMotionUsageDescription</key>
 	<string>SISO cần quyền truy cập cảm biến chuyển động IMU 50Hz để xác thực nhịp bước chân thật (Anti-GIGO).</string>
 	<key>UIBackgroundModes</key>

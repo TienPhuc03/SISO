@@ -5,6 +5,15 @@ class SisoErrorCodes {
   /// ERR_101: Email không thuộc danh sách trường Bình Thạnh
   static const String invalidDomain = 'ERR_101';
 
+  /// ERR_102: Mã OTP sai hoặc đã hết hạn
+  static const String otpInvalid = 'ERR_102';
+
+  /// ERR_103: Nhập sai OTP quá 5 lần hoặc gửi lại mã quá nhanh (< 60s)
+  static const String otpLocked = 'ERR_103';
+
+  /// Lỗi phía client: không kết nối được máy chủ (không có trong bảng mã của backend)
+  static const String network = 'ERR_NETWORK';
+
   /// ERR_201: Phát hiện phần mềm giả lập tọa độ (Fake GPS)
   static const String mockGpsDetected = 'ERR_201';
 

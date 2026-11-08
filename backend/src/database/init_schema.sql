@@ -367,6 +367,41 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_student_user();
 
+-- ZERO-TRUST: mọi user chèn vào public.users (kể cả từ NestJS AuthService) bị ép
+-- university_id theo đuôi email; email ngoài 5 trường bị chặn.
+-- Chấp nhận domain gốc và subdomain (vd st.uef.edu.vn -> uef.edu.vn), cùng quy tắc
+-- với matchCampusDomain (backend) và isValidCampusEmail (Flutter).
+CREATE OR REPLACE FUNCTION public.assign_university_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    domain_part VARCHAR;
+    uni_id UUID;
+BEGIN
+    domain_part := lower(split_part(NEW.email, '@', 2));
+
+    SELECT id INTO uni_id
+    FROM public.universities
+    WHERE domain_part = email_domain
+       OR domain_part LIKE '%.' || email_domain
+    ORDER BY length(email_domain) DESC
+    LIMIT 1;
+
+    IF uni_id IS NULL THEN
+        RAISE EXCEPTION 'ERR_INVALID_CAMPUS_DOMAIN: Tên miền % không thuộc 5 trường Bình Thạnh.', domain_part;
+    END IF;
+
+    NEW.university_id := uni_id;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS before_insert_user ON public.users;
+CREATE TRIGGER before_insert_user
+    BEFORE INSERT ON public.users
+    FOR EACH ROW EXECUTE FUNCTION public.assign_university_id();
+
 -- ============================================================================
 -- 9. CẤU HÌNH ROW LEVEL SECURITY (RLS) CHUẨN BẢO MẬT SUPABASE
 -- ============================================================================
