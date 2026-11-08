@@ -79,6 +79,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_arenas_name_unique ON public.arenas(name);
 CREATE INDEX IF NOT EXISTS idx_arenas_boundary ON public.arenas USING GIST (boundary_polygon);
 
 -- Seed Đấu trường Bình Thạnh & Lân cận (kèm đa giác ranh giới chuẩn PostGIS SRID 4326)
+-- Ranh giới ở đây là hình chữ nhật xấp xỉ, total_hexes ghi tay. Ranh giới chuẩn (OSM) và các ô H3 nạp bằng
+-- `npm run seed:hexagons -- --apply` (đọc src/database/arenas.geojson, tính lại total_hexes theo số ô thật).
 INSERT INTO public.arenas (name, description, boundary_polygon, total_hexes)
 VALUES
     (
@@ -176,16 +178,62 @@ CREATE TABLE IF NOT EXISTS public.running_sessions (
     user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
     arena_id UUID REFERENCES public.arenas(id) ON DELETE SET NULL,
     session_type VARCHAR(20) DEFAULT 'ARENA_LOOP',
-    distance_meters FLOAT NOT NULL CHECK (distance_meters >= 0),
-    duration_seconds INT NOT NULL CHECK (duration_seconds > 0),
+    distance_meters FLOAT NOT NULL DEFAULT 0 CHECK (distance_meters >= 0),
+    duration_seconds INT NOT NULL DEFAULT 0 CONSTRAINT running_sessions_duration_nonnegative CHECK (duration_seconds >= 0),
     hex_count INT DEFAULT 0,
     is_valid BOOLEAN DEFAULT TRUE,
     rejection_reason VARCHAR(50),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    -- [Module 4] Phiên chạy được kiểm định theo từng cửa sổ 256 mẫu (ACTIVE -> REJECTED | COMPLETED)
+    status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED'
+        CONSTRAINT running_sessions_status_check CHECK (status IN ('ACTIVE', 'REJECTED', 'COMPLETED')),
+    consecutive_biometric_failures INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS arena_id UUID REFERENCES public.arenas(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON public.running_sessions(user_id);
+
+-- [Module 4] Nâng cấp bảng cũ: thêm trạng thái Phiên chạy và bộ đếm cửa sổ không qua Cổng Sinh trắc.
+-- Mặc định 'COMPLETED' để các dòng cũ (và claim-loop hiện tại, chưa gửi status) không bị coi là đang chạy.
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED';
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS consecutive_biometric_failures INT NOT NULL DEFAULT 0;
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE public.running_sessions ALTER COLUMN distance_meters SET DEFAULT 0;
+ALTER TABLE public.running_sessions ALTER COLUMN duration_seconds SET DEFAULT 0;
+
+-- Phiên chạy được tạo ở cửa sổ đầu tiên với thời lượng 0, nên bỏ ràng buộc cũ duration_seconds > 0.
+DO $$
+DECLARE
+    old_check TEXT;
+BEGIN
+    FOR old_check IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'public.running_sessions'::regclass
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) ILIKE '%duration_seconds > 0%'
+    LOOP
+        EXECUTE format('ALTER TABLE public.running_sessions DROP CONSTRAINT %I', old_check);
+    END LOOP;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.running_sessions'::regclass
+          AND conname = 'running_sessions_duration_nonnegative'
+    ) THEN
+        ALTER TABLE public.running_sessions
+            ADD CONSTRAINT running_sessions_duration_nonnegative CHECK (duration_seconds >= 0);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.running_sessions'::regclass
+          AND conname = 'running_sessions_status_check'
+    ) THEN
+        ALTER TABLE public.running_sessions
+            ADD CONSTRAINT running_sessions_status_check CHECK (status IN ('ACTIVE', 'REJECTED', 'COMPLETED'));
+    END IF;
+END $$;
 
 -- ============================================================================
 -- 6. BẢNG NHẬT KÝ CHẶN DỮ LIỆU RÁC (GIGO_AUDIT_LOGS)
@@ -320,6 +368,41 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_student_user();
+
+-- ZERO-TRUST: mọi user chèn vào public.users (kể cả từ NestJS AuthService) bị ép
+-- university_id theo đuôi email; email ngoài 5 trường bị chặn.
+-- Chấp nhận domain gốc và subdomain (vd st.uef.edu.vn -> uef.edu.vn), cùng quy tắc
+-- với matchCampusDomain (backend) và isValidCampusEmail (Flutter).
+CREATE OR REPLACE FUNCTION public.assign_university_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    domain_part VARCHAR;
+    uni_id UUID;
+BEGIN
+    domain_part := lower(split_part(NEW.email, '@', 2));
+
+    SELECT id INTO uni_id
+    FROM public.universities
+    WHERE domain_part = email_domain
+       OR domain_part LIKE '%.' || email_domain
+    ORDER BY length(email_domain) DESC
+    LIMIT 1;
+
+    IF uni_id IS NULL THEN
+        RAISE EXCEPTION 'ERR_INVALID_CAMPUS_DOMAIN: Tên miền % không thuộc 5 trường Bình Thạnh.', domain_part;
+    END IF;
+
+    NEW.university_id := uni_id;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS before_insert_user ON public.users;
+CREATE TRIGGER before_insert_user
+    BEFORE INSERT ON public.users
+    FOR EACH ROW EXECUTE FUNCTION public.assign_university_id();
 
 -- ============================================================================
 -- 9. CẤU HÌNH ROW LEVEL SECURITY (RLS) CHUẨN BẢO MẬT SUPABASE

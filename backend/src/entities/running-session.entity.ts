@@ -1,4 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { User } from './user.entity';
 
 @Entity('running_sessions')
@@ -31,6 +39,19 @@ export class RunningSession {
   @Column({ nullable: true, length: 50 })
   rejection_reason: string;
 
+  /** ACTIVE (đang chạy) → REJECTED (Phiên bị loại) | COMPLETED (đã kết thúc). */
+  @Column({ length: 20, default: 'COMPLETED' })
+  status: RunStatus;
+
+  /** Số cửa sổ liên tiếp không qua Cổng Sinh trắc; đạt 2 thì Phiên chạy bị loại. */
+  @Column({ type: 'int', default: 0 })
+  consecutive_biometric_failures: number;
+
   @CreateDateColumn()
   created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
 }
+
+export type RunStatus = 'ACTIVE' | 'REJECTED' | 'COMPLETED';

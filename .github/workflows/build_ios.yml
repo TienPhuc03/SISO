@@ -3,6 +3,7 @@ name: Build Unsigned iOS IPA (For Sideloadly)
 on:
   push:
     branches:
+      - dev
       - develop
       - main
   workflow_dispatch:
@@ -21,11 +22,26 @@ jobs:
           channel: 'stable'
           cache: true
 
+      # IPA chạy trên iPhone thật nên không dùng được localhost.
+      # Đặt API_BASE_URL và SOCKET_URL tại: GitHub repo -> Settings ->
+      # Secrets and variables -> Actions -> tab Variables.
       - name: Prepare Environment Configuration (.env)
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          SOCKET_URL: ${{ vars.SOCKET_URL }}
         run: |
-          if [ ! -f .env ]; then
-            cp .env.example .env
+          cp .env.example .env
+          if [ -n "$API_BASE_URL" ]; then
+            sed -i '' "s|^API_BASE_URL=.*|API_BASE_URL=$API_BASE_URL|" .env
+          else
+            echo "::warning::Chưa đặt biến API_BASE_URL, IPA sẽ gọi localhost (không chạy được trên iPhone)."
           fi
+          if [ -n "$SOCKET_URL" ]; then
+            sed -i '' "s|^SOCKET_URL=.*|SOCKET_URL=$SOCKET_URL|" .env
+          else
+            echo "::warning::Chưa đặt biến SOCKET_URL, IPA sẽ dùng localhost cho WebSocket."
+          fi
+          grep -E '^(API_BASE_URL|SOCKET_URL)=' .env
 
       - name: Install Dependencies
         run: flutter pub get

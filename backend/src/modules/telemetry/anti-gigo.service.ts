@@ -1,19 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { ImuSampleDto } from './dto/telemetry-payload.dto';
+import { analyzeGait, GaitAnalysis } from './gait-analyzer';
 
 export interface GigoCheckResult {
   isValid: boolean;
   errorCode: string | null;
   message: string;
-  dominantFrequencyHz?: number;
-  estimatedCadenceSpm?: number;
 }
 
 @Injectable()
 export class AntiGigoService {
   private readonly MAX_HUMAN_SPEED_MPS = 9.0; // 32.4 km/h
-  private readonly MIN_RUNNING_CADENCE_SPM = 120; // Bước/phút tối thiểu khi chạy
-  private readonly MAX_RUNNING_CADENCE_SPM = 220; // Bước/phút tối đa
 
   /**
    * Tầng 1: Kinematic Gate - Kiểm tra vận tốc & gia tốc vật lý
@@ -47,59 +44,74 @@ export class AntiGigoService {
   }
 
   /**
-   * Tầng 2: Biometric Gate - Phân tích phổ tần số nhịp bước chân từ gia tốc kế
-   * Tần số lấy mẫu: 50Hz. Cửa sổ: 256 mẫu (5.12s)
+   * Tầng 2: Cổng Sinh trắc. Phân tích phổ (FFT) một cửa sổ 256 mẫu gia tốc (m/s²) để lấy Nhịp bước,
+   * rồi so với tốc độ: tốc độ chạy bộ mà không có dáng chạy thật thì nghi đi xe máy (ERR_202).
+   * Chỉ đánh giá MỘT cửa sổ; luật "2 cửa sổ liên tiếp" nằm ở TelemetryService.
    */
-  validateBiometrics(speedMps: number, imuSamples: ImuSampleDto[]): GigoCheckResult {
-    // Nếu chạy chậm dưới 1 m/s (đi bộ nhẹ) hoặc không có đủ dữ liệu IMU thì bỏ qua kiểm tra FFT
-    if (speedMps < 1.0 || !imuSamples || imuSamples.length < 64) {
-      return { isValid: true, errorCode: null, message: 'Chạy chậm/chờ thêm mẫu' };
+  validateBiometrics(speedMps: number, imuSamples: ImuSampleDto[]): BiometricCheckResult {
+    const analysis = analyzeGait(imuSamples ?? []);
+
+    // Dưới ngưỡng tốc độ (đi bộ, chạy rất chậm) không xét: xe máy chạy chậm vậy không đáng kể.
+    if (speedMps < BIOMETRIC_THRESHOLDS.minSpeedMps) {
+      return {
+        isValid: true,
+        errorCode: null,
+        message: 'Tốc độ thấp, chưa áp dụng Cổng Sinh trắc.',
+        applied: false,
+        analysis,
+      };
     }
 
-    // 1. Tính gia tốc tổng hợp Amag = sqrt(ax^2 + ay^2 + az^2) - 1.0G
-    const magnitudes = imuSamples.map((s) => {
-      const mag = Math.sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az);
-      return Math.abs(mag - 1.0); // Bỏ qua trọng lực Trái đất 1G
-    });
-
-    // 2. Tính phương sai / biên độ dao động đứng
-    const avg = magnitudes.reduce((a, b) => a + b, 0) / magnitudes.length;
-    const variance =
-      magnitudes.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / magnitudes.length;
-    const amplitude = Math.sqrt(variance);
-
-    // 3. Đếm số lần cắt qua giá trị trung bình (Zero-Crossing Rate) để ước tính tần số bước
-    let zeroCrossings = 0;
-    for (let i = 1; i < magnitudes.length; i++) {
-      if ((magnitudes[i] - avg) * (magnitudes[i - 1] - avg) < 0) {
-        zeroCrossings++;
-      }
+    const reasons: string[] = [];
+    if (analysis.cadenceSpm < BIOMETRIC_THRESHOLDS.minCadenceSpm) {
+      reasons.push(`Nhịp bước ${analysis.cadenceSpm} SPM < ${BIOMETRIC_THRESHOLDS.minCadenceSpm}`);
+    }
+    if (analysis.amplitudeG < BIOMETRIC_THRESHOLDS.minAmplitudeG) {
+      reasons.push(`biên độ ${analysis.amplitudeG}G < ${BIOMETRIC_THRESHOLDS.minAmplitudeG}G`);
+    }
+    if (analysis.peakProminence < BIOMETRIC_THRESHOLDS.minPeakProminence) {
+      reasons.push(`không có nhịp bước rõ (độ rõ đỉnh ${analysis.peakProminence})`);
     }
 
-    // Tần số bước chân = (số lần cắt / 2) / thời gian cửa sổ
-    const durationSeconds = imuSamples.length / 50.0;
-    const estimatedFreqHz = (zeroCrossings / 2) / durationSeconds;
-    const estimatedCadenceSpm = Math.round(estimatedFreqHz * 60);
-
-    // Người đi xe máy rà 10-15 km/h: Vận tốc cao (>= 2.5 m/s) nhưng nhịp bước gần như bằng 0 hoặc rung động cơ nhỏ
-    if (speedMps >= 2.5) {
-      if (amplitude < 0.2 || estimatedCadenceSpm < this.MIN_RUNNING_CADENCE_SPM) {
-        return {
-          isValid: false,
-          errorCode: 'ERR_202',
-          message: `VEHICLE_SPEED_MISMATCH: Tốc độ ${(speedMps * 3.6).toFixed(1)} km/h nhưng nhịp bước chỉ ${estimatedCadenceSpm} SPM (Nghi vấn đi xe máy).`,
-          dominantFrequencyHz: Number(estimatedFreqHz.toFixed(2)),
-          estimatedCadenceSpm,
-        };
-      }
+    if (reasons.length > 0) {
+      return {
+        isValid: false,
+        errorCode: 'ERR_202',
+        message: `VEHICLE_SPEED_MISMATCH: Tốc độ ${(speedMps * 3.6).toFixed(1)} km/h nhưng ${reasons.join(', ')} (nghi đi xe máy).`,
+        applied: true,
+        analysis,
+      };
     }
 
     return {
       isValid: true,
       errorCode: null,
-      message: 'Nhịp bước chân sinh học hợp lệ.',
-      dominantFrequencyHz: Number(estimatedFreqHz.toFixed(2)),
-      estimatedCadenceSpm,
+      message: 'Nhịp bước sinh học hợp lệ.',
+      applied: true,
+      analysis,
     };
   }
+}
+
+/**
+ * Ngưỡng TẠM của Cổng Sinh trắc (SRS FR-03, ticket #7). Sẽ hiệu chỉnh bằng mẫu IMU thật
+ * (ticket #9) và buổi test thực địa; giữ ở một chỗ để chỉnh không phải tìm khắp code.
+ */
+export const BIOMETRIC_THRESHOLDS = {
+  /** Chỉ xét Cổng Sinh trắc khi tốc độ từ mức này trở lên (9 km/h). */
+  minSpeedMps: 2.5,
+  minCadenceSpm: 120,
+  /** RMS độ lớn gia tốc sau khi trừ trung bình. */
+  minAmplitudeG: 0.2,
+  /** Tỉ lệ năng lượng quanh đỉnh trên năng lượng dải 1,5–4 Hz. */
+  minPeakProminence: 0.3,
+} as const;
+
+export interface BiometricCheckResult {
+  isValid: boolean;
+  errorCode: 'ERR_202' | null;
+  message: string;
+  /** false nếu tốc độ dưới ngưỡng nên cửa sổ không bị xét. */
+  applied: boolean;
+  analysis: GaitAnalysis;
 }

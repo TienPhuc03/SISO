@@ -12,6 +12,11 @@ export class Arena {
   @Column({ type: 'text', nullable: true })
   description: string;
 
+  /** Ranh giới gốc (PostGIS). TypeORM tự đọc/ghi dưới dạng GeoJSON. */
+  @Column({ type: 'geometry', spatialFeatureType: 'Polygon', srid: 4326, nullable: true })
+  boundary_polygon: { type: 'Polygon'; coordinates: number[][][] } | null;
+
+  /** Số bịa trong seed; dùng số ô đếm thật thay thế (ticket wayfinder #5). */
   @Column({ type: 'int', default: 0 })
   total_hexes: number;
 
