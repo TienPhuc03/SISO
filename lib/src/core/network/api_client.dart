@@ -36,4 +36,6 @@ class ApiClient {
   static void setAccessToken(String? token) {
     _accessToken = token;
   }
+
+  static bool get hasAccessToken => _accessToken != null && _accessToken!.isNotEmpty;
 }
