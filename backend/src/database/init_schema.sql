@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS public.running_sessions (
     status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED'
         CONSTRAINT running_sessions_status_check CHECK (status IN ('ACTIVE', 'REJECTED', 'COMPLETED')),
     consecutive_biometric_failures INT NOT NULL DEFAULT 0,
+    last_window_seq INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -198,6 +199,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON public.running_sessions(user_id)
 -- Mặc định 'COMPLETED' để các dòng cũ (và claim-loop hiện tại, chưa gửi status) không bị coi là đang chạy.
 ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED';
 ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS consecutive_biometric_failures INT NOT NULL DEFAULT 0;
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS last_window_seq INT NOT NULL DEFAULT 0;
 ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE public.running_sessions ALTER COLUMN distance_meters SET DEFAULT 0;
 ALTER TABLE public.running_sessions ALTER COLUMN duration_seconds SET DEFAULT 0;
