@@ -15,6 +15,7 @@ dependencies:
 
   # Network & Realtime (Independent Custom Backend)
   dio: ^5.4.3+1
+  crypto: ^3.0.8
   socket_io_client: ^2.0.3+1
   flutter_dotenv: ^5.1.0
 

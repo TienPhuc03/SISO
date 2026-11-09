@@ -80,8 +80,14 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
   /// Hàng đợi gửi tuần tự: mỗi cửa sổ cần sessionId do cửa sổ trước trả về.
   Future<void> _pending = Future.value();
 
+  /// Khoá ký và số thứ tự của Phiên chạy hiện tại; không đưa vào state vì UI không cần.
+  String? _signingKey;
+  int _seq = 0;
+
   void startRun() {
     _cancelSubscriptions();
+    _signingKey = null;
+    _seq = 0;
     state = const RunState(status: TrackingStatus.tracking);
     _speedSub = _source.speedMps.listen((mps) {
       if (mounted && state.status == TrackingStatus.tracking) {
@@ -108,8 +114,15 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
   Future<void> _verify(TelemetryWindow window) async {
     if (!mounted || state.status != TrackingStatus.tracking) return;
     try {
-      final result = await _repository.verifyWindow(window, sessionId: state.sessionId);
+      final signingKey = _signingKey;
+      final result = await _repository.verifyWindow(
+        window,
+        sessionId: state.sessionId,
+        signingKey: signingKey,
+        seq: signingKey == null ? null : ++_seq,
+      );
       if (!mounted || state.status != TrackingStatus.tracking) return;
+      _signingKey = result.signingKey ?? _signingKey;
       state = state.copyWith(
         sessionId: result.sessionId,
         cadenceSpm: result.cadenceSpm,

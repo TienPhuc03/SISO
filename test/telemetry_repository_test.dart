@@ -6,7 +6,24 @@ import 'package:siso_project/src/features/tracking/data/telemetry_repository.dar
 import 'package:siso_project/src/features/tracking/domain/telemetry_window.dart';
 
 void main() {
+  test('chữ ký khớp véc-tơ dùng chung với backend (telemetry-signature.spec.ts)', () {
+    expect(
+      signTelemetryBody('khoá-phiên', '{"ghi":"chú tiếng Việt","v":3.2}'),
+      '0c44a3010436d3f67c177f2e3e96cfbc48d2335359c18ebd74510a1226858646',
+    );
+  });
+
   group('parseVerifyResult (đọc BaseResponseDto của verify)', () {
+    test('đọc signingKey nếu server trả, không có thì null', () {
+      Map<String, dynamic> body(Map<String, dynamic> extra) => {
+            'success': true,
+            'data': {'sessionId': 's', ...extra},
+          };
+
+      expect(parseVerifyResult(body({'signingKey': 'k1'})).signingKey, 'k1');
+      expect(parseVerifyResult(body({})).signingKey, isNull);
+    });
+
     test('đọc đủ các trường trong data', () {
       final r = parseVerifyResult({
         'success': true,

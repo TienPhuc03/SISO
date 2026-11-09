@@ -18,8 +18,9 @@ class TelemetryWindow {
   final double horizontalAccuracy;
   final bool isMocked;
 
-  Map<String, dynamic> toJson({String? sessionId}) => {
+  Map<String, dynamic> toJson({String? sessionId, int? seq}) => {
         if (sessionId != null) 'sessionId': sessionId,
+        if (seq != null) 'seq': seq,
         'averageSpeedMps': averageSpeedMps,
         'horizontalAccuracy': horizontalAccuracy,
         'isMocked': isMocked,
@@ -52,9 +53,13 @@ class VerifyWindowResult {
     required this.biometricApplied,
     required this.cadenceSpm,
     required this.message,
+    this.signingKey,
   });
 
   final String sessionId;
+
+  /// Khoá HMAC của Phiên chạy; server chỉ trả ở cửa sổ đầu tiên.
+  final String? signingKey;
   final bool windowPassed;
   final int consecutiveFailures;
   final bool biometricApplied;
