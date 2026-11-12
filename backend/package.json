@@ -15,7 +15,8 @@
     "seed:hexagons": "ts-node src/database/seed-hexagons.ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage"
+    "test:cov": "jest --coverage",
+    "imu:analyze": "ts-node -T src/scripts/imu-analyze.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.8",
