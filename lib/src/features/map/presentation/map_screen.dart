@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../auth/presentation/logout_button.dart';
 import '../../tracking/presentation/active_run_screen.dart';
+import '../../tracking/presentation/sensor_log_screen.dart';
 import '../data/user_location_source.dart';
 import '../domain/play_area.dart';
 import 'hexagon_layer.dart';
@@ -180,13 +181,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'run',
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const ActiveRunScreen()),
+      // Nhấn giữ nút "Chạy" mở màn Ghi log cảm biến (issue #8; ẩn, dùng được cả bản release IPA)
+      floatingActionButton: GestureDetector(
+        key: const Key('run_fab_hold'),
+        onLongPress: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const SensorLogScreen()),
         ),
-        icon: const Icon(Icons.directions_run),
-        label: const Text('Chạy'),
+        child: FloatingActionButton.extended(
+          heroTag: 'run',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const ActiveRunScreen()),
+          ),
+          icon: const Icon(Icons.directions_run),
+          label: const Text('Chạy'),
+        ),
       ),
     );
   }

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/siso_exceptions.dart';
+import '../data/replay_telemetry_source.dart';
 import '../data/simulated_telemetry_source.dart';
 import '../data/telemetry_repository.dart';
+import '../domain/telemetry_source_choice.dart';
 import '../domain/telemetry_window.dart';
 
 /// Trạng thái Phiên chạy phía client (Idle -> Tracking -> EvaluatingLoop | Rejected).
@@ -149,11 +151,22 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
   }
 }
 
-/// Mặc định dùng nguồn GIẢ LẬP. Khi DEV 1 xong cảm biến thật, đổi provider này sang nguồn thật.
+/// Nguồn đang chọn trên màn Chạy: giả lập (mặc định) hoặc phát lại log thật (issue #8).
+final telemetrySourceChoiceProvider =
+    StateProvider<TelemetrySourceChoice>((ref) => const SimulatedSourceChoice());
+
+/// Mặc định dùng nguồn GIẢ LẬP. Khi DEV 1 xong cảm biến thật, thêm lựa chọn nguồn thật vào đây.
 final telemetryWindowSourceProvider = Provider<TelemetryWindowSource>((ref) {
-  final source = SimulatedTelemetrySource();
-  ref.onDispose(source.dispose);
-  return source;
+  switch (ref.watch(telemetrySourceChoiceProvider)) {
+    case SimulatedSourceChoice():
+      final source = SimulatedTelemetrySource();
+      ref.onDispose(source.dispose);
+      return source;
+    case ReplaySourceChoice(:final name, :final log, :final speedFactor):
+      final source = ReplayTelemetrySource(log: log, name: name, speedFactor: speedFactor);
+      ref.onDispose(source.dispose);
+      return source;
+  }
 });
 
 final telemetryRepositoryProvider = Provider<TelemetryRepository>((ref) => TelemetryRepository());

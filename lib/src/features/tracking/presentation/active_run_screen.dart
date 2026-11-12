@@ -7,6 +7,7 @@ import '../../../core/network/api_client.dart';
 import '../data/simulated_telemetry_source.dart';
 import '../providers/tracking_session_notifier.dart';
 import 'speed_cadence_hud.dart';
+import 'telemetry_source_picker.dart';
 
 /// Màn hình Phiên chạy đang diễn ra: HUD, cảnh báo vàng khi một cửa sổ nghi xe máy,
 /// và màn hình đỏ khi Phiên chạy bị loại (bằng chứng "còi đỏ" cho buổi test thực địa).
@@ -71,6 +72,7 @@ class ActiveRunScreen extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text('Phiên chạy: ${run.sessionId}', style: Theme.of(context).textTheme.bodySmall),
                 ),
+              TelemetrySourcePicker(enabled: run.status != TrackingStatus.tracking),
               if (source is SimulatedTelemetrySource) _SimulatorPanel(source: source),
             ],
           ),
