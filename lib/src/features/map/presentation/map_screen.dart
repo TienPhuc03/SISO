@@ -7,10 +7,12 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../auth/presentation/logout_button.dart';
+import '../../leaderboard/presentation/leaderboard_screen.dart';
 import '../../tracking/presentation/active_run_screen.dart';
 import '../../tracking/presentation/sensor_log_screen.dart';
 import '../data/user_location_source.dart';
 import '../domain/play_area.dart';
+import 'hex_pulse_layer.dart';
 import 'hexagon_layer.dart';
 import 'percent_dominance_bar.dart';
 import 'perf_panel.dart';
@@ -110,7 +112,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           child: const Text('SISO — Đại Chiến Bình Thạnh'),
         ),
         centerTitle: true,
-        actions: const [LogoutButton()],
+        actions: [
+          IconButton(
+            key: const Key('leaderboard_button'),
+            tooltip: 'Bảng xếp hạng',
+            icon: const Icon(Icons.leaderboard),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
+            ),
+          ),
+          const LogoutButton(),
+        ],
       ),
       body: Stack(
         children: [
@@ -128,6 +140,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 tileProvider: widget.tileProvider,
               ),
               const HexagonLayer(),
+              const HexPulseLayer(),
               if (_userPosition case final p?)
                 MarkerLayer(markers: [
                   Marker(

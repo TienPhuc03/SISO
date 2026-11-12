@@ -4,15 +4,13 @@ import { TurfController } from './turf.controller';
 import { TurfService } from './turf.service';
 import { H3Service } from './h3.service';
 import { H3Hexagon } from '../../entities/h3-hexagon.entity';
-import { University } from '../../entities/university.entity';
 import { User } from '../../entities/user.entity';
-import { RunningSession } from '../../entities/running-session.entity';
 import { Arena } from '../../entities/arena.entity';
 import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([H3Hexagon, University, User, RunningSession, Arena]),
+    TypeOrmModule.forFeature([H3Hexagon, User, Arena]),
     RealtimeModule,
   ],
   controllers: [TurfController],

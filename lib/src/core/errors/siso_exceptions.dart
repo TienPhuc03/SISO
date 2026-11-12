@@ -26,6 +26,9 @@ class SisoErrorCodes {
   /// ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc Phiên chạy đã kết thúc
   static const String sessionNotFound = 'ERR_204';
 
+  /// ERR_205: Cửa sổ cảm biến sai chữ ký HMAC hoặc bị gửi lại
+  static const String invalidSignature = 'ERR_205';
+
   /// ERR_301: Diện tích vòng khép vượt giới hạn 150 ô H3
   static const String loopTooLarge = 'ERR_301';
 

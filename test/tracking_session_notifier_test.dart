@@ -28,10 +28,19 @@ class FakeSource implements TelemetryWindowSource {
 class FakeRepository extends TelemetryRepository {
   final responses = <Object>[];
   final sentSessionIds = <String?>[];
+  final sentKeys = <String?>[];
+  final sentSeqs = <int?>[];
 
   @override
-  Future<VerifyWindowResult> verifyWindow(TelemetryWindow window, {String? sessionId}) async {
+  Future<VerifyWindowResult> verifyWindow(
+    TelemetryWindow window, {
+    String? sessionId,
+    String? signingKey,
+    int? seq,
+  }) async {
     sentSessionIds.add(sessionId);
+    sentKeys.add(signingKey);
+    sentSeqs.add(seq);
     final next = responses.removeAt(0);
     if (next is VerifyWindowResult) return next;
     throw next;
@@ -40,8 +49,9 @@ class FakeRepository extends TelemetryRepository {
 
 const _window = TelemetryWindow(samples: [], averageSpeedMps: 3.2, horizontalAccuracy: 6, isMocked: false);
 
-VerifyWindowResult _ok({bool passed = true, int failures = 0, int cadence = 162}) => VerifyWindowResult(
+VerifyWindowResult _ok({bool passed = true, int failures = 0, int cadence = 162, String? key}) => VerifyWindowResult(
       sessionId: 'sess-1',
+      signingKey: key,
       windowPassed: passed,
       consecutiveFailures: failures,
       biometricApplied: true,
@@ -65,6 +75,33 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await notifier.flush();
   }
+
+  test('ký từ cửa sổ thứ hai, seq tăng dần, giữ khoá của cửa sổ đầu', () async {
+    repo.responses.addAll([_ok(key: 'k1'), _ok(), _ok()]);
+    notifier.startRun();
+
+    await sendWindow();
+    await sendWindow();
+    await sendWindow();
+
+    expect(repo.sentKeys, [null, 'k1', 'k1']);
+    expect(repo.sentSeqs, [null, 1, 2]);
+  });
+
+  test('Phiên chạy mới bỏ khoá và đếm lại seq', () async {
+    repo.responses.addAll([_ok(key: 'k1'), _ok(), _ok(key: 'k2'), _ok()]);
+    notifier.startRun();
+    await sendWindow();
+    await sendWindow();
+    notifier.stopRun();
+
+    notifier.startRun();
+    await sendWindow();
+    await sendWindow();
+
+    expect(repo.sentKeys, [null, 'k1', null, 'k2']);
+    expect(repo.sentSeqs, [null, 1, null, 1]);
+  });
 
   test('bắt đầu chạy: bật nguồn dữ liệu và chuyển sang tracking', () {
     notifier.startRun();

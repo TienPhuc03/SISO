@@ -1,9 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** Kết quả kiểm định một cửa sổ 256 mẫu. */
 export class VerifyWindowResultDto {
   @ApiProperty({ example: 'b5f67b4e-28c4-42b7-a35b-c2e3919e913a', description: 'Gửi lại ở các cửa sổ sau' })
   sessionId: string;
+
+  @ApiPropertyOptional({
+    example: '9f2c…',
+    description: 'Khoá HMAC của Phiên chạy; chỉ trả ở cửa sổ đầu tiên, dùng để ký các cửa sổ sau',
+  })
+  signingKey?: string;
 
   @ApiProperty({ example: true, description: 'Cửa sổ này có qua Cổng Sinh trắc không' })
   windowPassed: boolean;

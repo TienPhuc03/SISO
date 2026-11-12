@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:latlong2/latlong.dart';
@@ -27,6 +29,11 @@ class MapStateNotifier extends StateNotifier<Map<String, HexCell>> {
 
   /// Các ô giả đang hiển thị (chỉ có khi bật chế độ đo hiệu năng).
   final Set<String> _syntheticIds = {};
+
+  final StreamController<Set<String>> _claimedCells = StreamController.broadcast();
+
+  /// Các ô vừa đổi chủ theo `hex_claimed`, để lớp hiệu ứng Pulse biết cần nháy ô nào.
+  Stream<Set<String>> get claimedCells => _claimedCells.stream;
   int get syntheticCount => _syntheticIds.length;
 
   /// Tải toàn bộ ô từ backend (tất cả Đấu trường đang có, chưa lọc).
@@ -106,20 +113,28 @@ class MapStateNotifier extends StateNotifier<Map<String, HexCell>> {
 
     final color = parseHexColor(event['hexColor']);
     final next = Map<String, HexCell>.of(state);
-    var changed = false;
+    final changed = <String>{};
     for (final h3Index in claimedHexes) {
       if (h3Index is! String) continue;
       final cell = next[h3Index];
       if (cell == null) continue;
       // Server đặt shield_hp = 100 khi chiếm (TurfService.claimLoop).
       next[h3Index] = cell.copyWith(universityId: universityId, color: color, shieldHp: 100);
-      changed = true;
+      changed.add(h3Index);
     }
-    if (changed) state = next;
+    if (changed.isEmpty) return;
+    state = next;
+    _claimedCells.add(changed);
   }
 
   /// Lắng nghe `hex_claimed` qua socket đã khởi tạo trong `main`.
   void subscribeRealtime() => _repository.subscribeHexClaimed(applyHexClaimed);
+
+  @override
+  void dispose() {
+    _claimedCells.close();
+    super.dispose();
+  }
 }
 
 final hexagonRepositoryProvider = Provider<HexagonRepository>((ref) => HexagonRepository());

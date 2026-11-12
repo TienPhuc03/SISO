@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:siso_project/src/features/auth/providers/auth_provider.dart';
+import 'package:siso_project/src/features/leaderboard/presentation/leaderboard_screen.dart';
+import 'package:siso_project/src/features/leaderboard/providers/season_rank_provider.dart';
 import 'package:siso_project/src/features/map/data/user_location_source.dart';
 import 'package:siso_project/src/features/map/domain/frame_stats.dart';
 import 'package:siso_project/src/features/map/domain/play_area.dart';
@@ -13,6 +15,7 @@ import 'package:siso_project/src/features/map/presentation/map_screen.dart';
 import 'package:siso_project/src/features/map/providers/map_state_notifier.dart';
 
 import 'auth_flow_test.dart' show FakeAuthRepository, student;
+import 'leaderboard_test.dart' show FakeLeaderboardRepository;
 import 'map_state_notifier_test.dart' show FakeHexagonRepository;
 
 class FakeLocationSource implements UserLocationSource {
@@ -159,6 +162,7 @@ void main() {
             authRepositoryProvider.overrideWithValue(FakeAuthRepository()..restoredUser = student),
             hexagonRepositoryProvider.overrideWithValue(FakeHexagonRepository([])),
             userLocationSourceProvider.overrideWithValue(location),
+            leaderboardRepositoryProvider.overrideWithValue(FakeLeaderboardRepository()),
           ],
           child: MaterialApp(home: MapScreen(tileProvider: _BlankTileProvider())),
         ),
@@ -196,6 +200,15 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('ngoài khu thi đấu'), findsOneWidget);
+    });
+
+    testWidgets('nút Bảng xếp hạng mở màn hình xếp hạng', (tester) async {
+      await pumpMap(tester, null);
+
+      await tester.tap(find.byKey(const Key('leaderboard_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LeaderboardScreen), findsOneWidget);
     });
 
     testWidgets('nhấn giữ tiêu đề 3 giây mở bảng đo; nhấn ngắn thì không', (tester) async {
