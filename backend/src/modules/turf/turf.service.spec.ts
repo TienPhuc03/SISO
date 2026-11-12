@@ -1,7 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { TurfService, NEUTRAL_HEX_COLOR } from './turf.service';
+import { TurfService, NEUTRAL_HEX_COLOR, UPSERT_CLAIMED_HEXES_SQL } from './turf.service';
 import { H3Hexagon } from '../../entities/h3-hexagon.entity';
+import { University } from '../../entities/university.entity';
+import { User } from '../../entities/user.entity';
+import { RunningSession } from '../../entities/running-session.entity';
 import { Arena } from '../../entities/arena.entity';
 import { H3Service } from './h3.service';
 import { TurfGateway } from '../realtime/turf.gateway';
@@ -40,8 +43,6 @@ describe('TurfService: đọc bản đồ (getArenaHexagons, getArenas)', () => 
     const unused = {} as Repository<any>;
     service = new TurfService(
       hexRepo as unknown as Repository<H3Hexagon>,
-      unused,
-      unused,
       unused,
       arenaRepo as unknown as Repository<Arena>,
       {} as H3Service,
@@ -155,5 +156,127 @@ describe('TurfService: đọc bản đồ (getArenaHexagons, getArenas)', () => 
       expect(arena.boundary).toBeNull();
       expect(arena.hexCount).toBe(0);
     });
+  });
+});
+
+describe('TurfService: claimLoop', () => {
+  const USER_ID = '33333333-3333-4333-8333-333333333333';
+  const SESSION_ID = '44444444-4444-4444-8444-444444444444';
+  const user = {
+    id: USER_ID,
+    email: 'sv@hutech.edu.vn',
+    display_name: 'SV',
+    university: { id: HUTECH_ID, name: 'HUTECH', short_code: 'HUTECH', hex_color: '#FFCC00' },
+  };
+  const dto = { boundaryH3Indexes: ['b', 'a'], sessionId: SESSION_ID, arenaId: ARENA_ID };
+  const activeSession = { id: SESSION_ID, user_id: USER_ID, status: 'ACTIVE', distance_meters: 1500 };
+
+  let tx: { findOne: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
+  let gateway: { broadcastHexClaimed: jest.Mock };
+  let service: TurfService;
+
+  beforeEach(() => {
+    tx = {
+      findOne: jest.fn().mockResolvedValue(activeSession),
+      query: jest.fn(),
+      increment: jest.fn(),
+      update: jest.fn(),
+    };
+    gateway = { broadcastHexClaimed: jest.fn() };
+    const hexRepo = { manager: { transaction: jest.fn((work) => work(tx)) } };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const unused = {} as Repository<any>;
+    service = new TurfService(
+      hexRepo as unknown as Repository<H3Hexagon>,
+      { findOne: jest.fn().mockResolvedValue(user) } as unknown as Repository<User>,
+      unused,
+      { calculateEnclosedHexes: () => ['c', 'a', 'b'] } as unknown as H3Service,
+      gateway as unknown as TurfGateway,
+    );
+  });
+
+  it('khoá đúng Phiên chạy của chính Sinh viên', async () => {
+    await service.claimLoop(USER_ID, dto);
+
+    expect(tx.findOne).toHaveBeenCalledWith(RunningSession, {
+      where: { id: SESSION_ID, user_id: USER_ID },
+      lock: { mode: 'pessimistic_write' },
+    });
+  });
+
+  it('ghi cả lô ô bằng một câu lệnh, ô đã sắp xếp', async () => {
+    await service.claimLoop(USER_ID, dto);
+
+    expect(tx.query).toHaveBeenCalledTimes(1);
+    expect(tx.query).toHaveBeenCalledWith(UPSERT_CLAIMED_HEXES_SQL, [['a', 'b', 'c'], ARENA_ID, HUTECH_ID]);
+  });
+
+  it('không gửi arenaId thì truyền null để giữ Đấu trường sẵn có của ô', async () => {
+    await service.claimLoop(USER_ID, { ...dto, arenaId: undefined });
+
+    expect(tx.query.mock.calls[0][1][1]).toBeNull();
+    expect(UPSERT_CLAIMED_HEXES_SQL).toContain('COALESCE(EXCLUDED.arena_id');
+  });
+
+  it('Km lấy từ quãng đường của Phiên chạy và đóng phiên', async () => {
+    const res = await service.claimLoop(USER_ID, dto);
+
+    expect(tx.increment).toHaveBeenCalledWith(University, { id: HUTECH_ID }, 'total_season_km', 1.5);
+    expect(tx.increment).toHaveBeenCalledWith(User, { id: USER_ID }, 'personal_km', 1.5);
+    expect(tx.update).toHaveBeenCalledWith(RunningSession, SESSION_ID, {
+      status: 'COMPLETED',
+      session_type: 'ARENA_LOOP',
+      hex_count: 3,
+    });
+    expect(res).toMatchObject({ claimedCount: 3, addedKm: 1.5 });
+  });
+
+  it.each([
+    ['không tồn tại hoặc của người khác', null, 'ERR_204'],
+    ['đã dùng để chiếm đất', { ...activeSession, status: 'COMPLETED' }, 'ERR_204'],
+    ['đã bị loại vì xe máy', { ...activeSession, status: 'REJECTED', rejection_reason: 'ERR_202' }, 'ERR_202'],
+  ])('Phiên chạy %s thì từ chối, không ghi gì', async (_name, session, code) => {
+    tx.findOne.mockResolvedValue(session);
+
+    await expect(service.claimLoop(USER_ID, dto)).rejects.toMatchObject({ response: { code } });
+    expect(tx.query).not.toHaveBeenCalled();
+    expect(tx.increment).not.toHaveBeenCalled();
+    expect(gateway.broadcastHexClaimed).not.toHaveBeenCalled();
+  });
+
+  it('broadcast sau khi transaction xong', async () => {
+    await service.claimLoop(USER_ID, dto);
+
+    expect(gateway.broadcastHexClaimed.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('hex_claimed đúng hợp đồng #3 và không chứa thông tin cá nhân', async () => {
+    await service.claimLoop(USER_ID, dto);
+
+    const payload = gateway.broadcastHexClaimed.mock.calls[0][0];
+    expect(payload).toEqual({
+      universityId: HUTECH_ID,
+      universityCode: 'HUTECH',
+      hexColor: '#FFCC00',
+      claimedHexes: ['c', 'a', 'b'],
+      arenaId: ARENA_ID,
+      claimedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+    });
+    expect(JSON.stringify(payload)).not.toContain(user.email);
+  });
+
+  it('không gửi arenaId thì hex_claimed mang arenaId null', async () => {
+    await service.claimLoop(USER_ID, { ...dto, arenaId: undefined });
+
+    expect(gateway.broadcastHexClaimed.mock.calls[0][0].arenaId).toBeNull();
+  });
+
+  it('transaction lỗi thì ném lỗi và không broadcast', async () => {
+    tx.increment.mockRejectedValue(new Error('db down'));
+
+    await expect(service.claimLoop(USER_ID, dto)).rejects.toThrow('db down');
+    expect(gateway.broadcastHexClaimed).not.toHaveBeenCalled();
   });
 });

@@ -7,6 +7,7 @@ import {
   ArrayMaxSize,
   IsOptional,
   IsUUID,
+  IsInt,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -41,6 +42,15 @@ export class TelemetryPayloadDto {
   @IsOptional()
   @IsUUID()
   sessionId?: string;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Số thứ tự cửa sổ đã ký, tăng dần trong một Phiên chạy (chống gửi lại). Bắt buộc khi có sessionId.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  seq?: number;
 
   @ApiProperty({ example: 3.2, description: 'Vận tốc trung bình trong cửa sổ (m/s), từ GPS' })
   @IsNumber()

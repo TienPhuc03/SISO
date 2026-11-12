@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AntiGigoService, BiometricCheckResult } from './anti-gigo.service';
@@ -6,6 +7,13 @@ import { TelemetryPayloadDto } from './dto/telemetry-payload.dto';
 import { VerifyWindowResultDto } from './dto/verify-window-response.dto';
 import { RunningSession } from '../../entities/running-session.entity';
 import { GigoAuditLog } from '../../entities/gigo-audit-log.entity';
+import { deriveSigningKey, isValidSignature } from './telemetry-signature';
+
+/** Bằng chứng toàn vẹn của một request: nguyên văn body và chữ ký trong header. */
+export interface WindowProof {
+  rawBody?: Buffer;
+  signature?: string;
+}
 
 /** Số cửa sổ liên tiếp không qua Cổng Sinh trắc thì Phiên chạy bị loại. */
 export const MAX_CONSECUTIVE_BIOMETRIC_FAILURES = 2;
@@ -26,10 +34,18 @@ export class TelemetryService {
     private readonly sessionRepository: Repository<RunningSession>,
     @InjectRepository(GigoAuditLog)
     private readonly auditRepository: Repository<GigoAuditLog>,
+    private readonly config: ConfigService,
   ) {}
 
-  async verifyWindow(userId: string, dto: TelemetryPayloadDto): Promise<VerifyWindowResultDto> {
+  async verifyWindow(
+    userId: string,
+    dto: TelemetryPayloadDto,
+    proof?: WindowProof,
+  ): Promise<VerifyWindowResultDto> {
     const session = await this.loadOrStartSession(userId, dto.sessionId);
+
+    // Cửa sổ đầu chưa có khoá nên chưa ký được; mọi cửa sổ sau bắt buộc ký.
+    if (dto.sessionId) await this.assertAuthentic(session, dto, proof);
 
     // Tầng 1: Cổng Động học (DEV 1). Không cho bỏ qua lần nào.
     const kinematic = this.antiGigoService.validateKinematics(
@@ -59,7 +75,36 @@ export class TelemetryService {
     session.duration_seconds = Math.round(session.duration_seconds + windowSeconds);
     await this.sessionRepository.save(session);
 
-    return this.toResult(session, biometric);
+    return {
+      ...this.toResult(session, biometric),
+      ...(dto.sessionId ? {} : { signingKey: this.signingKeyOf(session.id) }),
+    };
+  }
+
+  private signingKeyOf(sessionId: string): string {
+    return deriveSigningKey(this.config.getOrThrow<string>('JWT_SECRET'), sessionId);
+  }
+
+  /** Sai chữ ký hoặc gửi lại cửa sổ cũ: loại Phiên chạy và ghi nhật ký GIGO. */
+  private async assertAuthentic(
+    session: RunningSession,
+    dto: TelemetryPayloadDto,
+    proof?: WindowProof,
+  ): Promise<void> {
+    const signed =
+      !!proof?.rawBody &&
+      !!proof.signature &&
+      isValidSignature(this.signingKeyOf(session.id), proof.rawBody, proof.signature);
+    const fresh = dto.seq !== undefined && dto.seq > session.last_window_seq;
+
+    if (!signed || !fresh) {
+      await this.rejectSession(session, 'ERR_205', dto, null);
+      throw new BadRequestException({
+        code: 'ERR_205',
+        message: 'INVALID_SIGNATURE: Cửa sổ cảm biến sai chữ ký hoặc đã được gửi trước đó.',
+      });
+    }
+    session.last_window_seq = dto.seq;
   }
 
   /** Phiên chạy của chính Sinh viên này và còn ACTIVE; không có sessionId thì tạo mới. */

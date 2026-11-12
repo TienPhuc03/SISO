@@ -1,13 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:siso_project/src/core/network/api_client.dart';
 
-/// [Dev 2] Provider cung cấp dữ liệu xếp hạng mùa giải từ NestJS API
-final seasonRankProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  try {
-    final response = await ApiClient.dio.get('/api/v1/leaderboard/scores');
-    final List list = response.data as List;
-    return list.cast<Map<String, dynamic>>();
-  } catch (e) {
-    return [];
-  }
-});
+import '../data/leaderboard_repository.dart';
+import '../domain/leaderboard_models.dart';
+
+final leaderboardRepositoryProvider = Provider<LeaderboardRepository>((ref) => LeaderboardRepository());
+
+/// Dùng autoDispose để mỗi lần mở màn hình lại lấy số mới.
+final seasonRankProvider = FutureProvider.autoDispose<List<CampusScore>>(
+  (ref) => ref.watch(leaderboardRepositoryProvider).fetchScores(),
+);
+
+final hallOfFameProvider = FutureProvider.autoDispose<List<HallOfFameEntry>>(
+  (ref) => ref.watch(leaderboardRepositoryProvider).fetchHallOfFame(),
+);

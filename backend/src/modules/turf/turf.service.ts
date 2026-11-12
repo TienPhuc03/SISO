@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { H3Hexagon } from '../../entities/h3-hexagon.entity';
@@ -14,17 +14,28 @@ import { ArenaResponseDto, HexagonResponseDto } from './dto/turf-response.dto';
 /** Màu ô trung lập; khớp CampusColors.neutralHex phía client. */
 export const NEUTRAL_HEX_COLOR = '#44FFFFFF';
 
+/**
+ * Chiếm cả lô ô trong một câu lệnh. Ô đã thuộc Đấu trường giữ nguyên `arena_id`
+ * khi Vòng khép không gửi `arenaId`.
+ */
+export const UPSERT_CLAIMED_HEXES_SQL = `
+  INSERT INTO public.h3_hexagons
+    (h3_index, arena_id, owner_university_id, shield_hp, last_patrolled_at, updated_at)
+  SELECT unnest($1::varchar[]), $2::uuid, $3::uuid, 100, now(), now()
+  ON CONFLICT (h3_index) DO UPDATE SET
+    arena_id = COALESCE(EXCLUDED.arena_id, public.h3_hexagons.arena_id),
+    owner_university_id = EXCLUDED.owner_university_id,
+    shield_hp = EXCLUDED.shield_hp,
+    last_patrolled_at = EXCLUDED.last_patrolled_at,
+    updated_at = EXCLUDED.updated_at`;
+
 @Injectable()
 export class TurfService {
   constructor(
     @InjectRepository(H3Hexagon)
     private readonly hexRepository: Repository<H3Hexagon>,
-    @InjectRepository(University)
-    private readonly uniRepository: Repository<University>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(RunningSession)
-    private readonly sessionRepository: Repository<RunningSession>,
     @InjectRepository(Arena)
     private readonly arenaRepository: Repository<Arena>,
     private readonly h3Service: H3Service,
@@ -91,48 +102,72 @@ export class TurfService {
     // 1. Tính toán tất cả các ô H3 nằm trong vòng khép kín
     const claimedHexIndexes = this.h3Service.calculateEnclosedHexes(dto.boundaryH3Indexes);
 
-    // 2. Cập nhật quyền sở hữu các ô lục giác trong CSDL
-    const now = new Date();
-    for (const hexIndex of claimedHexIndexes) {
-      await this.hexRepository.save({
-        h3_index: hexIndex,
-        arena_id: dto.arenaId || null,
-        owner_university_id: user.university.id,
-        shield_hp: 100,
-        last_patrolled_at: now,
+    // 2. Ghi đất, Km và lịch sử phiên chạy cùng một transaction: lỗi ở bước nào cũng không để lại dữ liệu dở dang.
+    const distanceKm = await this.hexRepository.manager.transaction(async (tx) => {
+      // Khoá dòng Phiên chạy: hai lần gửi cùng lúc không thể cộng Km hai lần.
+      const session = await tx.findOne(RunningSession, {
+        where: { id: dto.sessionId, user_id: userId },
+        lock: { mode: 'pessimistic_write' },
       });
-    }
+      this.assertClaimable(session);
 
-    // 3. Tích lũy Km cống hiến vào Quỹ Km của trường và cá nhân
-    const distanceKm = dto.distanceMeters / 1000.0;
-    await this.uniRepository.increment({ id: user.university.id }, 'total_season_km', distanceKm);
-    await this.userRepository.increment({ id: user.id }, 'personal_km', distanceKm);
+      // Sắp xếp để hai Vòng khép chồng ô luôn khoá ô theo cùng thứ tự, tránh deadlock.
+      await tx.query(UPSERT_CLAIMED_HEXES_SQL, [
+        [...claimedHexIndexes].sort(),
+        dto.arenaId || null,
+        user.university.id,
+      ]);
 
-    // 4. Lưu lại lịch sử phiên chạy
-    await this.sessionRepository.save({
-      user_id: user.id,
-      session_type: 'ARENA_LOOP',
-      distance_meters: dto.distanceMeters,
-      duration_seconds: dto.durationSeconds,
-      hex_count: claimedHexIndexes.length,
-      is_valid: true,
+      // Km lấy từ quãng đường server đã tự cộng khi kiểm định (hợp đồng #3).
+      const km = session.distance_meters / 1000.0;
+      await tx.increment(University, { id: user.university.id }, 'total_season_km', km);
+      await tx.increment(User, { id: user.id }, 'personal_km', km);
+
+      await tx.update(RunningSession, session.id, {
+        status: 'COMPLETED',
+        session_type: 'ARENA_LOOP',
+        hex_count: claimedHexIndexes.length,
+      });
+      return km;
     });
 
-    // 5. Broadcast WebSocket tới tất cả sinh viên
+    // 3. Chỉ broadcast sau khi đã commit, để client không đổi màu theo dữ liệu chưa được lưu.
     this.turfGateway.broadcastHexClaimed({
       universityId: user.university.id,
       universityCode: user.university.short_code,
       hexColor: user.university.hex_color,
       claimedHexes: claimedHexIndexes,
-      claimedBy: user.display_name || user.email,
+      arenaId: dto.arenaId || null,
+      claimedAt: new Date().toISOString(),
     });
 
     return {
-      success: true,
       message: `Chúc mừng! Bạn đã chiếm ${claimedHexIndexes.length} ô lục giác cho ${user.university.name}!`,
       claimedCount: claimedHexIndexes.length,
       claimedHexes: claimedHexIndexes,
       addedKm: Number(distanceKm.toFixed(2)),
     };
+  }
+
+  /** Chỉ Phiên chạy còn ACTIVE của chính Sinh viên mới được dùng để chiếm đất, và chỉ một lần. */
+  private assertClaimable(session: RunningSession | null): void {
+    if (!session) {
+      throw new NotFoundException({
+        code: 'ERR_204',
+        message: 'SESSION_NOT_FOUND: Không tìm thấy Phiên chạy.',
+      });
+    }
+    if (session.status === 'REJECTED') {
+      throw new BadRequestException({
+        code: session.rejection_reason ?? 'ERR_202',
+        message: 'SESSION_REJECTED: Phiên chạy đã bị loại, không thể chiếm đất.',
+      });
+    }
+    if (session.status !== 'ACTIVE') {
+      throw new NotFoundException({
+        code: 'ERR_204',
+        message: 'SESSION_NOT_FOUND: Phiên chạy đã kết thúc.',
+      });
+    }
   }
 }

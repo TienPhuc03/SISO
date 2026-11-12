@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsArray, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsArray, IsOptional, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ClaimLoopDto {
@@ -10,16 +10,15 @@ export class ClaimLoopDto {
   @IsNotEmpty()
   boundaryH3Indexes: string[];
 
-  @ApiProperty({ example: 1250.5, description: 'Quãng đường chạy hợp lệ (mét)' })
-  @IsNumber()
-  distanceMeters: number;
-
-  @ApiProperty({ example: 480, description: 'Thời gian chạy (giây)' })
-  @IsNumber()
-  durationSeconds: number;
+  @ApiProperty({
+    example: 'c1f67b4e-28c4-42b7-a35b-c2e3919e9140',
+    description: 'Phiên chạy do POST /telemetry/verify cấp. Quãng đường và thời gian lấy từ phiên này, không nhận từ client.',
+  })
+  @IsUUID()
+  sessionId: string;
 
   @ApiProperty({ example: 'b5f67b4e-28c4-42b7-a35b-c2e3919e913a', required: false })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   arenaId?: string;
 }
