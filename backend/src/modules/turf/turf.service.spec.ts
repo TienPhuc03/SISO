@@ -169,7 +169,9 @@ describe('TurfService: claimLoop', () => {
     display_name: 'SV',
     university: { id: HUTECH_ID, name: 'HUTECH', short_code: 'HUTECH', hex_color: '#FFCC00' },
   };
-  const dto = { boundaryH3Indexes: ['b', 'a'], sessionId: SESSION_ID, arenaId: ARENA_ID };
+  // Ô thật ở HUTECH (trong khu thi đấu), đặt tên theo thứ tự sắp xếp.
+  const [a, b, c] = h3.gridDisk(h3.latLngToCell(10.8016, 106.7146, 10), 1).sort();
+  const dto = { boundaryH3Indexes: [b, a], sessionId: SESSION_ID, arenaId: ARENA_ID };
   const activeSession = { id: SESSION_ID, user_id: USER_ID, status: 'ACTIVE', distance_meters: 1500 };
 
   let tx: { findOne: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
@@ -185,13 +187,11 @@ describe('TurfService: claimLoop', () => {
     };
     gateway = { broadcastHexClaimed: jest.fn() };
     const hexRepo = { manager: { transaction: jest.fn((work) => work(tx)) } };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const unused = {} as Repository<any>;
     service = new TurfService(
       hexRepo as unknown as Repository<H3Hexagon>,
       { findOne: jest.fn().mockResolvedValue(user) } as unknown as Repository<User>,
-      unused,
-      { calculateEnclosedHexes: () => ['c', 'a', 'b'] } as unknown as H3Service,
+      { findOne: jest.fn().mockResolvedValue({ id: ARENA_ID, boundary_polygon: null }) } as unknown as Repository<Arena>,
+      { calculateEnclosedHexes: () => [c, a, b] } as unknown as H3Service,
       gateway as unknown as TurfGateway,
     );
   });
@@ -209,7 +209,7 @@ describe('TurfService: claimLoop', () => {
     await service.claimLoop(USER_ID, dto);
 
     expect(tx.query).toHaveBeenCalledTimes(1);
-    expect(tx.query).toHaveBeenCalledWith(UPSERT_CLAIMED_HEXES_SQL, [['a', 'b', 'c'], ARENA_ID, HUTECH_ID]);
+    expect(tx.query).toHaveBeenCalledWith(UPSERT_CLAIMED_HEXES_SQL, [[a, b, c], ARENA_ID, HUTECH_ID]);
   });
 
   it('không gửi arenaId thì truyền null để giữ Đấu trường sẵn có của ô', async () => {
@@ -261,7 +261,7 @@ describe('TurfService: claimLoop', () => {
       universityId: HUTECH_ID,
       universityCode: 'HUTECH',
       hexColor: '#FFCC00',
-      claimedHexes: ['c', 'a', 'b'],
+      claimedHexes: [c, a, b],
       arenaId: ARENA_ID,
       claimedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
     });
@@ -289,11 +289,19 @@ describe('TurfService: claimLoop với H3Service thật (không giả lập floo
   const ring = h3.gridRingUnsafe(center, 3);
   const expected = [...ring, ...h3.gridDisk(center, 2)].sort();
 
+  // Ranh giới GeoJSON [lng, lat] hình vuông ±0.01° (~1 km) quanh một điểm.
+  const square = (lat: number, lng: number) => ({
+    type: 'Polygon' as const,
+    coordinates: [[[lng - 0.01, lat - 0.01], [lng + 0.01, lat - 0.01], [lng + 0.01, lat + 0.01], [lng - 0.01, lat + 0.01], [lng - 0.01, lat - 0.01]]],
+  });
+
   let tx: { findOne: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
   let gateway: { broadcastHexClaimed: jest.Mock };
+  let arenaRepo: { findOne: jest.Mock };
   let service: TurfService;
 
   beforeEach(() => {
+    arenaRepo = { findOne: jest.fn().mockResolvedValue({ id: ARENA_ID, boundary_polygon: square(10.8016, 106.7146) }) };
     tx = {
       findOne: jest.fn().mockResolvedValue({ id: SESSION_ID, user_id: USER_ID, status: 'ACTIVE', distance_meters: 1200 }),
       query: jest.fn(),
@@ -309,7 +317,7 @@ describe('TurfService: claimLoop với H3Service thật (không giả lập floo
           university: { id: HUTECH_ID, short_code: 'HUTECH', hex_color: '#FFCC00' },
         }),
       } as unknown as Repository<User>,
-      {} as Repository<Arena>,
+      arenaRepo as unknown as Repository<Arena>,
       new H3Service(),
       gateway as unknown as TurfGateway,
     );
@@ -331,5 +339,54 @@ describe('TurfService: claimLoop với H3Service thật (không giả lập floo
     ).rejects.toMatchObject({ response: { code: 'ERR_302' } });
     expect(tx.findOne).not.toHaveBeenCalled();
     expect(gateway.broadcastHexClaimed).not.toHaveBeenCalled();
+  });
+
+  describe('H4: vòng chạy phải nằm trong Đấu trường / khu thi đấu', () => {
+    const claim = (boundaryH3Indexes: string[], arenaId?: string) =>
+      service.claimLoop(USER_ID, { boundaryH3Indexes, sessionId: SESSION_ID, arenaId });
+    const expectNothingWritten = () => {
+      expect(tx.findOne).not.toHaveBeenCalled();
+      expect(gateway.broadcastHexClaimed).not.toHaveBeenCalled();
+    };
+
+    it('arenaId không tồn tại hoặc Đấu trường đã tắt: 404 ERR_303 (trước đây lỗi khoá ngoại → 500), không ghi gì', async () => {
+      arenaRepo.findOne.mockResolvedValue(null);
+
+      await expect(claim(ring, ARENA_ID)).rejects.toMatchObject({ status: 404, response: { code: 'ERR_303' } });
+      expect(arenaRepo.findOne).toHaveBeenCalledWith({ where: { id: ARENA_ID, is_active: true } });
+      expectNothingWritten();
+    });
+
+    it('vòng nằm ngoài ranh giới Đấu trường đã chọn: 400 ERR_304, không ghi gì', async () => {
+      arenaRepo.findOne.mockResolvedValue({ id: ARENA_ID, boundary_polygon: square(10.7951, 106.7219) }); // Landmark 81
+
+      await expect(claim(ring, ARENA_ID)).rejects.toMatchObject({ status: 400, response: { code: 'ERR_304' } });
+      expectNothingWritten();
+    });
+
+    it('vòng vắt qua mép Đấu trường (có ô bên trong ở ngoài): ERR_304', async () => {
+      arenaRepo.findOne.mockResolvedValue({ id: ARENA_ID, boundary_polygon: square(10.8016 + 0.012, 106.7146) });
+
+      await expect(claim(ring, ARENA_ID)).rejects.toMatchObject({ response: { code: 'ERR_304' } });
+      expectNothingWritten();
+    });
+
+    it('không gửi arenaId, vòng trong khu Bình Thạnh: chiếm bình thường, không tra Đấu trường', async () => {
+      await expect(claim(ring)).resolves.toMatchObject({ claimedCount: 37 });
+      expect(arenaRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('không gửi arenaId, vòng ở Hà Nội: ERR_304', async () => {
+      const hanoi = h3.gridRingUnsafe(h3.latLngToCell(21.0285, 105.8542, 10), 3);
+
+      await expect(claim(hanoi)).rejects.toMatchObject({ response: { code: 'ERR_304' } });
+      expectNothingWritten();
+    });
+
+    it('Đấu trường chưa có ranh giới: dùng khung khu thi đấu', async () => {
+      arenaRepo.findOne.mockResolvedValue({ id: ARENA_ID, boundary_polygon: null });
+
+      await expect(claim(ring, ARENA_ID)).resolves.toMatchObject({ claimedCount: 37 });
+    });
   });
 });

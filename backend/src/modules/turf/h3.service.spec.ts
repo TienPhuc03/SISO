@@ -76,5 +76,21 @@ describe('H3Service (Topology Gate Unit Tests)', () => {
         expect.objectContaining({ response: expect.objectContaining({ code: 'ERR_301' }) }),
       );
     });
+
+    it('đường chữ L không quay về điểm đầu: ERR_302 LOOP_NOT_CLOSED (trước đây server tự nối thẳng)', () => {
+      const open = ring.slice(0, 12);
+
+      expect(() => service.calculateEnclosedHexes(open)).toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({ code: 'ERR_302', message: expect.stringContaining('LOOP_NOT_CLOSED') }),
+        }),
+      );
+    });
+
+    it('hai ô không liền kề: ERR_302', () => {
+      expect(() => service.calculateEnclosedHexes([ring[0], ring[9]])).toThrow(
+        expect.objectContaining({ response: expect.objectContaining({ code: 'ERR_302' }) }),
+      );
+    });
   });
 });

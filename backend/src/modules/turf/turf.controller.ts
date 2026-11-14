@@ -33,8 +33,8 @@ export class TurfController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Bao vây khép vòng và chiếm ô lục giác H3 cho trường' })
   @ApiResponse({ status: 200, description: 'Chiếm đất thành công và kích hoạt WebSocket' })
-  @ApiResponse({ status: 400, description: 'ERR_301: Vòng lặp quá lớn (> 150 ô); ERR_302: đường biên tự cắt / sai thứ tự; hoặc mã loại của Phiên chạy đã bị loại' })
-  @ApiResponse({ status: 404, description: 'ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc đã dùng' })
+  @ApiResponse({ status: 400, description: 'ERR_301: Vòng lặp quá lớn (> 150 ô); ERR_302: đường biên tự cắt / sai thứ tự / chưa khép (ô cuối không liền kề ô đầu); ERR_304: có ô ngoài Đấu trường (hoặc ngoài khu thi đấu nếu không gửi arenaId); hoặc mã loại của Phiên chạy đã bị loại' })
+  @ApiResponse({ status: 404, description: 'ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc đã dùng; ERR_303: arenaId không tồn tại' })
   async claimLoop(@Request() req, @Body() dto: ClaimLoopDto) {
     const { message, ...result } = await this.turfService.claimLoop(req.user.userId, dto);
     return BaseResponseDto.ok(message, result);
