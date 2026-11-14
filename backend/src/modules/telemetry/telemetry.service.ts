@@ -15,6 +15,11 @@ export interface WindowProof {
   signature?: string;
 }
 
+/** Kết quả xử lý một cửa sổ: hoặc kết quả trả client, hoặc lỗi loại Phiên chạy (ném sau khi commit). */
+type WindowOutcome =
+  | { result: VerifyWindowResultDto; rejection?: undefined }
+  | { rejection: BadRequestException; result?: undefined };
+
 /** Số cửa sổ liên tiếp không qua Cổng Sinh trắc thì Phiên chạy bị loại. */
 export const MAX_CONSECUTIVE_BIOMETRIC_FAILURES = 2;
 
@@ -42,10 +47,55 @@ export class TelemetryService {
     dto: TelemetryPayloadDto,
     proof?: WindowProof,
   ): Promise<VerifyWindowResultDto> {
-    const session = await this.loadOrStartSession(userId, dto.sessionId);
+    // Cửa sổ đầu: dòng Phiên chạy vừa tạo, chưa ai khác biết sessionId nên không cần khoá.
+    if (!dto.sessionId) {
+      const session = await this.startSession(userId);
+      const outcome = await this.processWindow(this.sessionRepository, this.auditRepository, session, dto);
+      if (outcome.rejection) throw outcome.rejection;
+      return { ...outcome.result, signingKey: this.signingKeyOf(session.id) };
+    }
+
+    // Các cửa sổ sau: khoá dòng Phiên chạy tới khi commit, để hai request đến cùng lúc (gửi lại
+    // cùng seq, hay hai seq chồng nhau) xử lý lần lượt: không lọt cửa sổ gửi lại, không mất km.
+    const outcome = await this.sessionRepository.manager.transaction(async (tx) => {
+      const sessions = tx.getRepository(RunningSession);
+      const session = await this.loadActiveSession(sessions, userId, dto.sessionId);
+      return this.processWindow(sessions, tx.getRepository(GigoAuditLog), session, dto, proof);
+    });
+    // Ném SAU khi commit: trạng thái REJECTED và nhật ký GIGO phải được lưu, không bị rollback.
+    if (outcome.rejection) throw outcome.rejection;
+    return outcome.result;
+  }
+
+  /**
+   * Chạy hai Cổng trên một cửa sổ và lưu kết quả vào Phiên chạy. Bị loại thì trả lỗi (không ném)
+   * để lời gọi ném sau khi transaction đã commit.
+   */
+  private async processWindow(
+    sessions: Repository<RunningSession>,
+    audits: Repository<GigoAuditLog>,
+    session: RunningSession,
+    dto: TelemetryPayloadDto,
+    proof?: WindowProof,
+  ): Promise<WindowOutcome> {
+    const reject = async (
+      code: string,
+      message: string,
+      biometric: BiometricCheckResult | null,
+    ): Promise<WindowOutcome> => {
+      await this.rejectSession(sessions, audits, session, code, dto, biometric);
+      return { rejection: new BadRequestException({ code, message }) };
+    };
 
     // Cửa sổ đầu chưa có khoá nên chưa ký được; mọi cửa sổ sau bắt buộc ký.
-    if (dto.sessionId) await this.assertAuthentic(session, dto, proof);
+    if (dto.sessionId && !this.isAuthentic(session, dto, proof)) {
+      return reject(
+        'ERR_205',
+        'INVALID_SIGNATURE: Cửa sổ cảm biến sai chữ ký hoặc đã được gửi trước đó.',
+        null,
+      );
+    }
+    if (dto.sessionId) session.last_window_seq = dto.seq;
 
     // Tầng 1: Cổng Động học (DEV 1). Không cho bỏ qua lần nào.
     const kinematic = this.antiGigoService.validateKinematics(
@@ -53,10 +103,7 @@ export class TelemetryService {
       dto.horizontalAccuracy,
       dto.isMocked,
     );
-    if (!kinematic.isValid) {
-      await this.rejectSession(session, kinematic.errorCode, dto, null);
-      throw new BadRequestException({ code: kinematic.errorCode, message: kinematic.message });
-    }
+    if (!kinematic.isValid) return reject(kinematic.errorCode, kinematic.message, null);
 
     // Tầng 2: Cổng Sinh trắc. Một cửa sổ lẻ không qua chỉ là cảnh báo.
     const biometric = this.antiGigoService.validateBiometrics(dto.averageSpeedMps, dto.imuSamples);
@@ -65,66 +112,57 @@ export class TelemetryService {
       : session.consecutive_biometric_failures + 1;
 
     if (session.consecutive_biometric_failures >= MAX_CONSECUTIVE_BIOMETRIC_FAILURES) {
-      await this.rejectSession(session, 'ERR_202', dto, biometric);
-      throw new BadRequestException({ code: 'ERR_202', message: biometric.message });
+      return reject('ERR_202', biometric.message, biometric);
     }
 
     // Server tự cộng quãng đường và thời gian (hợp đồng #3: không tin km do client tự báo).
     const { windowSeconds } = biometric.analysis;
     session.distance_meters = session.distance_meters + dto.averageSpeedMps * windowSeconds;
     session.duration_seconds = Math.round(session.duration_seconds + windowSeconds);
-    await this.sessionRepository.save(session);
+    await sessions.save(session);
 
-    return {
-      ...this.toResult(session, biometric),
-      ...(dto.sessionId ? {} : { signingKey: this.signingKeyOf(session.id) }),
-    };
+    return { result: this.toResult(session, biometric) };
   }
 
   private signingKeyOf(sessionId: string): string {
     return deriveSigningKey(this.config.getOrThrow<string>('JWT_SECRET'), sessionId);
   }
 
-  /** Sai chữ ký hoặc gửi lại cửa sổ cũ: loại Phiên chạy và ghi nhật ký GIGO. */
-  private async assertAuthentic(
-    session: RunningSession,
-    dto: TelemetryPayloadDto,
-    proof?: WindowProof,
-  ): Promise<void> {
+  /** Đúng chữ ký của Phiên chạy và seq mới hơn mọi cửa sổ đã nhận (không phải gửi lại). */
+  private isAuthentic(session: RunningSession, dto: TelemetryPayloadDto, proof?: WindowProof): boolean {
     const signed =
       !!proof?.rawBody &&
       !!proof.signature &&
       isValidSignature(this.signingKeyOf(session.id), proof.rawBody, proof.signature);
     const fresh = dto.seq !== undefined && dto.seq > session.last_window_seq;
-
-    if (!signed || !fresh) {
-      await this.rejectSession(session, 'ERR_205', dto, null);
-      throw new BadRequestException({
-        code: 'ERR_205',
-        message: 'INVALID_SIGNATURE: Cửa sổ cảm biến sai chữ ký hoặc đã được gửi trước đó.',
-      });
-    }
-    session.last_window_seq = dto.seq;
+    return signed && fresh;
   }
 
-  /** Phiên chạy của chính Sinh viên này và còn ACTIVE; không có sessionId thì tạo mới. */
-  private async loadOrStartSession(userId: string, sessionId?: string): Promise<RunningSession> {
-    if (!sessionId) {
-      return this.sessionRepository.save(
-        this.sessionRepository.create({
-          user_id: userId,
-          session_type: 'FREE_RUN',
-          status: 'ACTIVE',
-          distance_meters: 0,
-          duration_seconds: 0,
-          consecutive_biometric_failures: 0,
-          is_valid: true,
-        }),
-      );
-    }
+  private startSession(userId: string): Promise<RunningSession> {
+    return this.sessionRepository.save(
+      this.sessionRepository.create({
+        user_id: userId,
+        session_type: 'FREE_RUN',
+        status: 'ACTIVE',
+        distance_meters: 0,
+        duration_seconds: 0,
+        consecutive_biometric_failures: 0,
+        is_valid: true,
+      }),
+    );
+  }
 
+  /** Phiên chạy của chính Sinh viên này và còn ACTIVE, khoá dòng tới hết transaction. */
+  private async loadActiveSession(
+    sessions: Repository<RunningSession>,
+    userId: string,
+    sessionId: string,
+  ): Promise<RunningSession> {
     // Lọc theo cả user_id: phiên của người khác trả 404 như không tồn tại.
-    const session = await this.sessionRepository.findOne({ where: { id: sessionId, user_id: userId } });
+    const session = await sessions.findOne({
+      where: { id: sessionId, user_id: userId },
+      lock: { mode: 'pessimistic_write' },
+    });
     if (!session) {
       throw new NotFoundException({
         code: 'ERR_204',
@@ -147,6 +185,8 @@ export class TelemetryService {
   }
 
   private async rejectSession(
+    sessions: Repository<RunningSession>,
+    audits: Repository<GigoAuditLog>,
     session: RunningSession,
     errorCode: string,
     dto: TelemetryPayloadDto,
@@ -155,10 +195,10 @@ export class TelemetryService {
     session.status = 'REJECTED';
     session.is_valid = false;
     session.rejection_reason = errorCode;
-    await this.sessionRepository.save(session);
+    await sessions.save(session);
 
-    await this.auditRepository.save(
-      this.auditRepository.create({
+    await audits.save(
+      audits.create({
         user_id: session.user_id,
         session_id: session.id,
         rejection_type: errorCode,

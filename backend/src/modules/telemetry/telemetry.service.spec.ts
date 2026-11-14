@@ -42,9 +42,16 @@ function activeSession(overrides: Partial<RunningSession> = {}): RunningSession 
 
 describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () => {
   let service: TelemetryService;
-  let sessions: { create: jest.Mock; save: jest.Mock; findOne: jest.Mock };
+  let sessions: {
+    create: jest.Mock;
+    save: jest.Mock;
+    findOne: jest.Mock;
+    manager: { transaction: jest.Mock };
+  };
   let audits: { create: jest.Mock; save: jest.Mock };
   let nextSeq: number;
+  /** Kết cục của transaction gần nhất: commit (callback xong) hay rollback (callback ném lỗi). */
+  let txOutcome: 'commit' | 'rollback' | null;
 
   /** Gửi như client thật: từ cửa sổ có sessionId trở đi thì ký nguyên văn body và tăng seq. */
   const verify = (dto: TelemetryPayloadDto) => {
@@ -61,8 +68,21 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
       create: jest.fn((x) => ({ ...x })),
       save: jest.fn(async (x) => ({ id: x.id ?? SESSION, ...x })),
       findOne: jest.fn(),
+      manager: { transaction: jest.fn() },
     };
     audits = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    txOutcome = null;
+    const tx = { getRepository: (entity: unknown) => (entity === RunningSession ? sessions : audits) };
+    sessions.manager.transaction.mockImplementation(async (work: (m: typeof tx) => Promise<unknown>) => {
+      try {
+        const result = await work(tx);
+        txOutcome = 'commit';
+        return result;
+      } catch (e) {
+        txOutcome = 'rollback';
+        throw e;
+      }
+    });
     service = new TelemetryService(
       new AntiGigoService(),
       sessions as unknown as Repository<RunningSession>,
@@ -98,7 +118,33 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
 
     await verify(payload({ sessionId: SESSION }));
 
-    expect(sessions.findOne).toHaveBeenCalledWith({ where: { id: SESSION, user_id: USER } });
+    expect(sessions.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: SESSION, user_id: USER } }),
+    );
+  });
+
+  it('khoá dòng Phiên chạy trong transaction: hai request cùng lúc không cùng lọt seq hay mất km', async () => {
+    sessions.findOne.mockResolvedValue(activeSession());
+
+    await verify(payload({ sessionId: SESSION }));
+
+    expect(sessions.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(sessions.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
+    );
+    expect(txOutcome).toBe('commit');
+  });
+
+  it('bị loại trong transaction: vẫn commit trạng thái REJECTED và nhật ký GIGO rồi mới trả lỗi', async () => {
+    sessions.findOne.mockResolvedValue(activeSession({ consecutive_biometric_failures: 1 }));
+
+    await expect(
+      verify(payload({ sessionId: SESSION, imuSamples: SCENARIOS.motorbike() })),
+    ).rejects.toMatchObject({ response: { code: 'ERR_202' } });
+
+    expect(txOutcome).toBe('commit');
+    expect(sessions.save.mock.calls.at(-1)[0]).toMatchObject({ status: 'REJECTED' });
+    expect(audits.save).toHaveBeenCalledTimes(1);
   });
 
   it('một cửa sổ nghi xe máy chỉ là cảnh báo: 200, windowPassed = false, chưa loại', async () => {

@@ -127,11 +127,16 @@ class MapStateNotifier extends StateNotifier<Map<String, HexCell>> {
     _claimedCells.add(changed);
   }
 
+  /// Giữ một tham chiếu cố định để gỡ đúng listener này khỏi socket khi dispose.
+  late final void Function(dynamic event) _onHexClaimed = applyHexClaimed;
+
   /// Lắng nghe `hex_claimed` qua socket đã khởi tạo trong `main`.
-  void subscribeRealtime() => _repository.subscribeHexClaimed(applyHexClaimed);
+  void subscribeRealtime() => _repository.subscribeHexClaimed(_onHexClaimed);
 
   @override
   void dispose() {
+    // Socket sống suốt app: không gỡ thì mỗi lần provider tạo lại sẽ để lại một listener chết.
+    _repository.unsubscribeHexClaimed(_onHexClaimed);
     _claimedCells.close();
     super.dispose();
   }

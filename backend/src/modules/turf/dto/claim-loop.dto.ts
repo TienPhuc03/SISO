@@ -1,13 +1,16 @@
-import { IsNotEmpty, IsArray, IsOptional, IsUUID } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ClaimLoopDto {
   @ApiProperty({
-    example: ['8a31e8464627fff', '8a31e846460ffff', '8a31e8464617fff'],
-    description: 'Danh sách các ô lục giác H3 Res 10 tạo thành chu trình khép kín',
+    example: ['8a65b56718a7fff', '8a65b567199ffff', '8a65b5671887fff'],
+    description:
+      'Các ô H3 Res 10 trên đường biên, THEO ĐÚNG THỨ TỰ chạy qua (ô đầu lặp lại ở cuối thì được bỏ qua). ' +
+      'Sai thứ tự, đường biên tự cắt hoặc đi lại ô cũ → 400 ERR_302.',
   })
   @IsArray()
-  @IsNotEmpty()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
   boundaryH3Indexes: string[];
 
   @ApiProperty({

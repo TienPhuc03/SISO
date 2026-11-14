@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import * as h3 from 'h3-js';
 import { Repository } from 'typeorm';
 import { TurfService, NEUTRAL_HEX_COLOR, UPSERT_CLAIMED_HEXES_SQL } from './turf.service';
 import { H3Hexagon } from '../../entities/h3-hexagon.entity';
@@ -277,6 +278,58 @@ describe('TurfService: claimLoop', () => {
     tx.increment.mockRejectedValue(new Error('db down'));
 
     await expect(service.claimLoop(USER_ID, dto)).rejects.toThrow('db down');
+    expect(gateway.broadcastHexClaimed).not.toHaveBeenCalled();
+  });
+});
+
+describe('TurfService: claimLoop với H3Service thật (không giả lập flood fill)', () => {
+  const USER_ID = '33333333-3333-4333-8333-333333333333';
+  const SESSION_ID = '44444444-4444-4444-8444-444444444444';
+  const center = h3.latLngToCell(10.8016, 106.7146, 10);
+  const ring = h3.gridRingUnsafe(center, 3);
+  const expected = [...ring, ...h3.gridDisk(center, 2)].sort();
+
+  let tx: { findOne: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
+  let gateway: { broadcastHexClaimed: jest.Mock };
+  let service: TurfService;
+
+  beforeEach(() => {
+    tx = {
+      findOne: jest.fn().mockResolvedValue({ id: SESSION_ID, user_id: USER_ID, status: 'ACTIVE', distance_meters: 1200 }),
+      query: jest.fn(),
+      increment: jest.fn(),
+      update: jest.fn(),
+    };
+    gateway = { broadcastHexClaimed: jest.fn() };
+    service = new TurfService(
+      { manager: { transaction: jest.fn((work) => work(tx)) } } as unknown as Repository<H3Hexagon>,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: USER_ID,
+          university: { id: HUTECH_ID, short_code: 'HUTECH', hex_color: '#FFCC00' },
+        }),
+      } as unknown as Repository<User>,
+      {} as Repository<Arena>,
+      new H3Service(),
+      gateway as unknown as TurfGateway,
+    );
+  });
+
+  it('vòng 18 ô biên: ghi và broadcast đủ 37 ô, gồm cả 19 ô bên trong', async () => {
+    const res = await service.claimLoop(USER_ID, { boundaryH3Indexes: ring, sessionId: SESSION_ID, arenaId: ARENA_ID });
+
+    expect(tx.query.mock.calls[0][1][0]).toEqual(expected);
+    expect([...gateway.broadcastHexClaimed.mock.calls[0][0].claimedHexes].sort()).toEqual(expected);
+    expect(res).toMatchObject({ claimedCount: 37 });
+  });
+
+  it('đường biên sai thứ tự: ERR_302, không mở transaction, không broadcast', async () => {
+    const shuffled = [0, 9, 3, 12, 6, 15, 1, 10, 4, 13, 7, 16, 2, 11, 5, 14, 8, 17].map((i) => ring[i]);
+
+    await expect(
+      service.claimLoop(USER_ID, { boundaryH3Indexes: shuffled, sessionId: SESSION_ID }),
+    ).rejects.toMatchObject({ response: { code: 'ERR_302' } });
+    expect(tx.findOne).not.toHaveBeenCalled();
     expect(gateway.broadcastHexClaimed).not.toHaveBeenCalled();
   });
 });
