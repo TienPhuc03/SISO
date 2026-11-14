@@ -2,7 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import * as h3 from 'h3-js';
 
 /** Độ phân giải H3 dùng thống nhất ở client và server. */
-const H3_RESOLUTION = 10;
+export const H3_RESOLUTION = 10;
 
 type Point = [number, number];
 
@@ -40,6 +40,14 @@ export class H3Service {
     // 2. Bỏ ô trùng liên tiếp (đứng lâu trong một ô) và ô đầu lặp lại ở cuối vòng.
     const ring = boundaryIndexes.filter((hex, i) => hex !== boundaryIndexes[i - 1]);
     if (ring.length > 1 && ring[0] === ring[ring.length - 1]) ring.pop();
+
+    // Vòng phải khép: ô cuối liền kề ô đầu (~ngưỡng khép vòng 20 m), không để server tự nối một đường thẳng dài.
+    if (ring.length > 1 && !h3.areNeighborCells(ring[0], ring[ring.length - 1])) {
+      throw new BadRequestException({
+        code: 'ERR_302',
+        message: 'LOOP_NOT_CLOSED: Ô cuối của đường biên không liền kề ô đầu, vòng chạy chưa khép.',
+      });
+    }
 
     if (ring.length < 3) {
       return Array.from(new Set(ring));
