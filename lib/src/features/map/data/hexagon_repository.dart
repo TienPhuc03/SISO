@@ -31,6 +31,11 @@ class HexagonRepository {
   void subscribeHexClaimed(Function(dynamic event) onClaimed) {
     SocketManager.onHexClaimed(onClaimed);
   }
+
+  /// Ngừng lắng nghe: truyền đúng callback đã đưa vào [subscribeHexClaimed].
+  void unsubscribeHexClaimed(Function(dynamic event) onClaimed) {
+    SocketManager.offHexClaimed(onClaimed);
+  }
 }
 
 /// Đọc mảng trong `BaseResponseDto` của backend: `{ success, message, data: [...], timestamp }`.

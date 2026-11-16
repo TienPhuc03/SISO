@@ -35,8 +35,11 @@ class SisoErrorCodes {
   /// ERR_302: Đường chạy cắt chéo hình số 8 không hợp lệ
   static const String selfIntersect = 'ERR_302';
 
-  /// ERR_303: arenaId không tồn tại (GET /api/v1/turf/hexagons)
+  /// ERR_303: arenaId không tồn tại (GET /api/v1/turf/hexagons, POST /api/v1/turf/claim-loop)
   static const String arenaNotFound = 'ERR_303';
+
+  /// ERR_304: Vòng chạy có ô nằm ngoài Đấu trường (hoặc ngoài khu thi đấu nếu không gửi arenaId)
+  static const String outOfArena = 'ERR_304';
 }
 
 class SisoException implements Exception {

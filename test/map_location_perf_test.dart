@@ -29,6 +29,12 @@ class FakeLocationSource implements UserLocationSource {
     calls++;
     return position;
   }
+
+  /// Vị trí máy còn nhớ; mặc định không có.
+  LatLng? lastKnown;
+
+  @override
+  Future<LatLng?> lastKnownPosition() async => lastKnown;
 }
 
 /// Tile nền giả: ảnh PNG trong suốt 1x1, không gọi mạng.

@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as h3 from 'h3-js';
 import { H3Hexagon } from '../../entities/h3-hexagon.entity';
 import { University } from '../../entities/university.entity';
 import { User } from '../../entities/user.entity';
 import { RunningSession } from '../../entities/running-session.entity';
-import { H3Service } from './h3.service';
+import { H3Service, H3_RESOLUTION } from './h3.service';
 import { TurfGateway } from '../realtime/turf.gateway';
 import { ClaimLoopDto } from './dto/claim-loop.dto';
 import { Arena } from '../../entities/arena.entity';
@@ -13,6 +14,12 @@ import { ArenaResponseDto, HexagonResponseDto } from './dto/turf-response.dto';
 
 /** Màu ô trung lập; khớp CampusColors.neutralHex phía client. */
 export const NEUTRAL_HEX_COLOR = '#44FFFFFF';
+
+/** Khung bao khu thi đấu Bình Thạnh; khớp PlayArea phía client. */
+export const PLAY_AREA = { minLat: 10.755, maxLat: 10.83, minLng: 106.695, maxLng: 106.745 };
+
+const arenaNotFound = () =>
+  new NotFoundException({ code: 'ERR_303', message: 'ARENA_NOT_FOUND: Không tìm thấy Đấu trường.' });
 
 /**
  * Chiếm cả lô ô trong một câu lệnh. Ô đã thuộc Đấu trường giữ nguyên `arena_id`
@@ -48,10 +55,7 @@ export class TurfService {
    */
   async getArenaHexagons(arenaId?: string): Promise<HexagonResponseDto[]> {
     if (arenaId && !(await this.arenaRepository.exists({ where: { id: arenaId } }))) {
-      throw new NotFoundException({
-        code: 'ERR_303',
-        message: 'ARENA_NOT_FOUND: Không tìm thấy Đấu trường.',
-      });
+      throw arenaNotFound();
     }
 
     const hexes = await this.hexRepository.find({
@@ -101,6 +105,7 @@ export class TurfService {
 
     // 1. Tính toán tất cả các ô H3 nằm trong vòng khép kín
     const claimedHexIndexes = this.h3Service.calculateEnclosedHexes(dto.boundaryH3Indexes);
+    await this.assertInsideArena(claimedHexIndexes, dto.arenaId);
 
     // 2. Ghi đất, Km và lịch sử phiên chạy cùng một transaction: lỗi ở bước nào cũng không để lại dữ liệu dở dang.
     const distanceKm = await this.hexRepository.manager.transaction(async (tx) => {
@@ -147,6 +152,34 @@ export class TurfService {
       claimedHexes: claimedHexIndexes,
       addedKm: Number(distanceKm.toFixed(2)),
     };
+  }
+
+  /**
+   * Mọi ô chiếm (biên + bên trong) phải nằm trong Đấu trường `arenaId` (tâm ô trong ranh giới, cùng cách
+   * seed), hoặc trong khu thi đấu nếu không gửi `arenaId` / Đấu trường chưa có ranh giới.
+   * shortcut: chưa đối chiếu biên với vệt GPS thật của Phiên chạy (server chưa lưu vệt); làm khi có lưu vệt.
+   */
+  private async assertInsideArena(cells: string[], arenaId?: string): Promise<void> {
+    let inside = (cell: string) => {
+      const [lat, lng] = h3.cellToLatLng(cell);
+      return lat >= PLAY_AREA.minLat && lat <= PLAY_AREA.maxLat && lng >= PLAY_AREA.minLng && lng <= PLAY_AREA.maxLng;
+    };
+    if (arenaId) {
+      const arena = await this.arenaRepository.findOne({ where: { id: arenaId, is_active: true } });
+      if (!arena) throw arenaNotFound(); // Đấu trường đã tắt coi như không tồn tại, khớp getArenas
+      if (arena.boundary_polygon) {
+        const arenaCells = new Set(h3.polygonToCells(arena.boundary_polygon.coordinates, H3_RESOLUTION, true));
+        inside = (cell) => arenaCells.has(cell);
+      }
+    }
+    if (!cells.every(inside)) {
+      throw new BadRequestException({
+        code: 'ERR_304',
+        message: arenaId
+          ? 'OUT_OF_ARENA: Vòng chạy có ô nằm ngoài Đấu trường.'
+          : 'OUT_OF_ARENA: Vòng chạy có ô nằm ngoài khu thi đấu Bình Thạnh.',
+      });
+    }
   }
 
   /** Chỉ Phiên chạy còn ACTIVE của chính Sinh viên mới được dùng để chiếm đất, và chỉ một lần. */

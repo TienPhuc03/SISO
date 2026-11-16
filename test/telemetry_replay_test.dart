@@ -364,6 +364,9 @@ void main() {
     expect(repo.windows.every((w) => w.samples.length == TelemetryWindow.size), isTrue);
     expect(repo.windows.first.averageSpeedMps, closeTo(3.2, 1e-9));
     expect(repo.sessionIds, [null, 'sess-1']);
+    // Cửa sổ phát lại cũng được ký HMAC như nguồn thật (khoá server trả ở cửa sổ đầu)
+    expect(repo.signingKeys, [null, 'khoa-phien']);
+    expect(repo.seqs, [null, 1]);
 
     await tester.tap(find.text('Dừng chạy'));
     await tester.pump();
@@ -398,6 +401,8 @@ void main() {
 class _RecordingRepository extends TelemetryRepository {
   final windows = <TelemetryWindow>[];
   final sessionIds = <String?>[];
+  final signingKeys = <String?>[];
+  final seqs = <int?>[];
 
   @override
   Future<VerifyWindowResult> verifyWindow(
@@ -408,6 +413,8 @@ class _RecordingRepository extends TelemetryRepository {
   }) async {
     windows.add(window);
     sessionIds.add(sessionId);
+    signingKeys.add(signingKey);
+    seqs.add(seq);
     return const VerifyWindowResult(
       sessionId: 'sess-1',
       windowPassed: true,
@@ -415,6 +422,7 @@ class _RecordingRepository extends TelemetryRepository {
       biometricApplied: true,
       cadenceSpm: 162,
       message: 'ok',
+      signingKey: 'khoa-phien',
     );
   }
 

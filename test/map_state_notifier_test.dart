@@ -12,12 +12,22 @@ class FakeHexagonRepository extends HexagonRepository {
   final List<Map<String, dynamic>> rows;
   void Function(dynamic event)? onClaimed;
 
+  /// Callback đã đăng ký và đã gỡ, để kiểm tra notifier gỡ đúng listener của mình.
+  Function(dynamic event)? subscribed;
+  Function(dynamic event)? unsubscribed;
+
   @override
   Future<List<Map<String, dynamic>>> fetchArenaHexagons([String? arenaId]) async => rows;
 
   @override
   void subscribeHexClaimed(Function(dynamic event) onClaimed) {
+    subscribed = onClaimed;
     this.onClaimed = (e) => onClaimed(e);
+  }
+
+  @override
+  void unsubscribeHexClaimed(Function(dynamic event) onClaimed) {
+    unsubscribed = onClaimed;
   }
 }
 
@@ -176,6 +186,18 @@ void main() {
       notifier.dispose();
 
       expect(() => repo.onClaimed!(claimed(['8a65b560000ffff'])), returnsNormally);
+    });
+
+    test('dispose gỡ đúng listener đã đăng ký khỏi socket', () async {
+      final repo = FakeHexagonRepository(_rows());
+      final notifier = await _loaded(repo);
+      notifier.subscribeRealtime();
+      expect(repo.unsubscribed, isNull);
+
+      notifier.dispose();
+
+      expect(repo.subscribed, isNotNull);
+      expect(repo.unsubscribed, same(repo.subscribed));
     });
   });
 }

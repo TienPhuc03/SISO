@@ -18,6 +18,11 @@ export interface WindowProof {
   signature?: string;
 }
 
+/** Kết quả xử lý một cửa sổ: hoặc kết quả trả client, hoặc lỗi loại Phiên chạy (ném sau khi commit). */
+type WindowOutcome =
+  | { result: VerifyWindowResultDto; rejection?: undefined }
+  | { rejection: BadRequestException; result?: undefined };
+
 /** Số cửa sổ liên tiếp không qua Cổng Sinh trắc thì Phiên chạy bị loại. */
 export const MAX_CONSECUTIVE_BIOMETRIC_FAILURES = 2;
 
@@ -45,11 +50,57 @@ export class TelemetryService {
     dto: TelemetryPayloadDto,
     proof?: WindowProof,
   ): Promise<VerifyWindowResultDto> {
-    // Cửa sổ đầu (không có sessionId) chỉ tạo Phiên chạy sau khi qua Cổng Động học.
-    const existing = dto.sessionId ? await this.loadActiveSession(userId, dto.sessionId) : null;
+    // Cửa sổ đầu: chưa có Phiên chạy (chỉ tạo khi qua Cổng Động học), chưa ai biết sessionId nên không cần khoá.
+    if (!dto.sessionId) {
+      const outcome = await this.processWindow(this.sessionRepository, this.auditRepository, userId, null, dto);
+      if (outcome.rejection) throw outcome.rejection;
+      return { ...outcome.result, signingKey: this.signingKeyOf(outcome.result.sessionId) };
+    }
+
+    // Các cửa sổ sau: khoá dòng Phiên chạy tới khi commit, để hai request đến cùng lúc (gửi lại
+    // cùng seq, hay hai seq chồng nhau) xử lý lần lượt: không lọt cửa sổ gửi lại, không mất km.
+    const outcome = await this.sessionRepository.manager.transaction(async (tx) => {
+      const sessions = tx.getRepository(RunningSession);
+      const session = await this.loadActiveSession(sessions, userId, dto.sessionId);
+      return this.processWindow(sessions, tx.getRepository(GigoAuditLog), userId, session, dto, proof);
+    });
+    // Ném SAU khi commit: trạng thái REJECTED và nhật ký GIGO phải được lưu, không bị rollback.
+    if (outcome.rejection) throw outcome.rejection;
+    return outcome.result;
+  }
+
+  /**
+   * Chạy hai Cổng trên một cửa sổ và lưu kết quả vào Phiên chạy ([existing] = null với cửa sổ đầu).
+   * Bị loại thì trả lỗi (không ném) để lời gọi ném sau khi transaction đã commit.
+   */
+  private async processWindow(
+    sessions: Repository<RunningSession>,
+    audits: Repository<GigoAuditLog>,
+    userId: string,
+    existing: RunningSession | null,
+    dto: TelemetryPayloadDto,
+    proof?: WindowProof,
+  ): Promise<WindowOutcome> {
+    const reject = async (
+      session: RunningSession | null,
+      code: string,
+      message: string,
+      biometric: BiometricCheckResult | null,
+    ): Promise<WindowOutcome> => {
+      await this.rejectSession(sessions, audits, userId, session, code, dto, biometric);
+      return { rejection: new BadRequestException({ code, message }) };
+    };
 
     // Cửa sổ đầu chưa có khoá nên chưa ký được; mọi cửa sổ sau bắt buộc ký.
-    if (existing) await this.assertAuthentic(existing, dto, proof);
+    if (existing && !this.isAuthentic(existing, dto, proof)) {
+      return reject(
+        existing,
+        'ERR_205',
+        'INVALID_SIGNATURE: Cửa sổ cảm biến sai chữ ký hoặc đã được gửi trước đó.',
+        null,
+      );
+    }
+    if (existing) existing.last_window_seq = dto.seq;
 
     // Tầng 1: Cổng Động học (DEV 1). Không cho bỏ qua lần nào.
     const kinematic = this.antiGigoService.validateKinematics(
@@ -59,15 +110,15 @@ export class TelemetryService {
     );
     if (!kinematic.isValid) {
       // ERR_203 là mất tín hiệu tạm thời (SRS: tạm dừng đo): bỏ cửa sổ này, giữ Phiên chạy.
-      if (kinematic.errorCode !== 'ERR_203') {
-        await this.rejectSession(userId, existing, kinematic.errorCode, dto, null);
+      if (kinematic.errorCode === 'ERR_203') {
+        return { rejection: new BadRequestException({ code: kinematic.errorCode, message: kinematic.message }) };
       }
-      throw new BadRequestException({ code: kinematic.errorCode, message: kinematic.message });
+      return reject(existing, kinematic.errorCode, kinematic.message, null);
     }
 
     const session =
       existing ??
-      this.sessionRepository.create({
+      sessions.create({
         user_id: userId,
         session_type: 'FREE_RUN',
         status: 'ACTIVE',
@@ -84,20 +135,16 @@ export class TelemetryService {
       : session.consecutive_biometric_failures + 1;
 
     if (session.consecutive_biometric_failures >= MAX_CONSECUTIVE_BIOMETRIC_FAILURES) {
-      await this.rejectSession(userId, session, 'ERR_202', dto, biometric);
-      throw new BadRequestException({ code: 'ERR_202', message: biometric.message });
+      return reject(session, 'ERR_202', biometric.message, biometric);
     }
 
     // Server tự cộng quãng đường và thời gian (hợp đồng #3: không tin km do client tự báo).
     const { windowSeconds } = biometric.analysis;
     session.distance_meters = session.distance_meters + dto.averageSpeedMps * windowSeconds;
     session.duration_seconds = Math.round(session.duration_seconds + windowSeconds);
-    const saved = await this.sessionRepository.save(session);
+    const saved = await sessions.save(session);
 
-    return {
-      ...this.toResult(saved, biometric),
-      ...(existing ? {} : { signingKey: this.signingKeyOf(saved.id) }),
-    };
+    return { result: this.toResult(saved, biometric) };
   }
 
   /**
@@ -133,32 +180,27 @@ export class TelemetryService {
     return deriveSigningKey(this.config.getOrThrow<string>('JWT_SECRET'), sessionId);
   }
 
-  /** Sai chữ ký hoặc gửi lại cửa sổ cũ: loại Phiên chạy và ghi nhật ký GIGO. */
-  private async assertAuthentic(
-    session: RunningSession,
-    dto: TelemetryPayloadDto,
-    proof?: WindowProof,
-  ): Promise<void> {
+  /** Đúng chữ ký của Phiên chạy và seq mới hơn mọi cửa sổ đã nhận (không phải gửi lại). */
+  private isAuthentic(session: RunningSession, dto: TelemetryPayloadDto, proof?: WindowProof): boolean {
     const signed =
       !!proof?.rawBody &&
       !!proof.signature &&
       isValidSignature(this.signingKeyOf(session.id), proof.rawBody, proof.signature);
     const fresh = dto.seq !== undefined && dto.seq > session.last_window_seq;
-
-    if (!signed || !fresh) {
-      await this.rejectSession(session.user_id, session, 'ERR_205', dto, null);
-      throw new BadRequestException({
-        code: 'ERR_205',
-        message: 'INVALID_SIGNATURE: Cửa sổ cảm biến sai chữ ký hoặc đã được gửi trước đó.',
-      });
-    }
-    session.last_window_seq = dto.seq;
+    return signed && fresh;
   }
 
-  /** Phiên chạy của chính Sinh viên này và còn ACTIVE. */
-  private async loadActiveSession(userId: string, sessionId: string): Promise<RunningSession> {
+  /** Phiên chạy của chính Sinh viên này và còn ACTIVE, khoá dòng tới hết transaction. */
+  private async loadActiveSession(
+    sessions: Repository<RunningSession>,
+    userId: string,
+    sessionId: string,
+  ): Promise<RunningSession> {
     // Lọc theo cả user_id: phiên của người khác trả 404 như không tồn tại.
-    const session = await this.sessionRepository.findOne({ where: { id: sessionId, user_id: userId } });
+    const session = await sessions.findOne({
+      where: { id: sessionId, user_id: userId },
+      lock: { mode: 'pessimistic_write' },
+    });
     this.assertActive(session);
     return session;
   }
@@ -186,6 +228,8 @@ export class TelemetryService {
 
   /** Ghi nhật ký GIGO; nếu đã có Phiên chạy thì chuyển nó sang REJECTED. Cửa sổ đầu bị loại không tạo Phiên. */
   private async rejectSession(
+    sessions: Repository<RunningSession>,
+    audits: Repository<GigoAuditLog>,
     userId: string,
     session: RunningSession | null,
     errorCode: string,
@@ -197,11 +241,11 @@ export class TelemetryService {
       session.status = 'REJECTED';
       session.is_valid = false;
       session.rejection_reason = errorCode;
-      sessionId = (await this.sessionRepository.save(session)).id;
+      sessionId = (await sessions.save(session)).id;
     }
 
-    await this.auditRepository.save(
-      this.auditRepository.create({
+    await audits.save(
+      audits.create({
         user_id: userId,
         session_id: sessionId,
         rejection_type: errorCode,

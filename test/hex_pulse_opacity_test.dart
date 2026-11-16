@@ -87,10 +87,10 @@ void main() {
       await notifier.loadHexagons();
       await tester.pumpWidget(ProviderScope(
         overrides: [mapStateNotifierProvider.overrideWith((ref) => notifier)],
-        child: MaterialApp(
+        child: const MaterialApp(
           home: FlutterMap(
-            options: const MapOptions(initialCenter: LatLng(10.79, 106.72), initialZoom: 15),
-            children: const [HexPulseLayer()],
+            options: MapOptions(initialCenter: LatLng(10.79, 106.72), initialZoom: 15),
+            children: [HexPulseLayer()],
           ),
         ),
       ));

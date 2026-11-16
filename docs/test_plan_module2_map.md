@@ -59,17 +59,17 @@ Lần đầu `verify-otp` sẽ **tạo một dòng mới trong `users`** cho `te
 
 ### 1.3. Dữ liệu mẫu
 
-Chạy trong Supabase SQL Editor. Đây là **dữ liệu thử**: 7 ô quanh tâm bản đồ (10.800, 106.718), sinh bằng `h3-js gridDisk(latLngToCell(10.800, 106.718, 10), 1)`. 3 ô gán vào Đấu trường Landmark 81, 4 ô không thuộc Đấu trường nào.
+Chạy trong Supabase SQL Editor. Đây là **dữ liệu thử**: 7 ô quanh tâm bản đồ (10.800, 106.718), sinh bằng `h3-js gridDisk(latLngToCell(10.800, 106.718, 10), 1)`. 3 ô gán vào Đấu trường **Cụm Đại Học Bình Thạnh (Khu D2)** (cả 7 ô đều nằm trong ranh giới D2), 4 ô không thuộc Đấu trường nào.
 
 ```sql
 -- [TEST DATA] Module 2: xoá bằng SQL ở mục 1.4 sau khi test
 INSERT INTO public.h3_hexagons (h3_index, arena_id, owner_university_id, shield_hp)
 VALUES
-  ('8a65b56718b7fff', (SELECT id FROM public.arenas WHERE name = 'Công Viên Landmark 81'),
+  ('8a65b56718b7fff', (SELECT id FROM public.arenas WHERE name = 'Cụm Đại Học Bình Thạnh (Khu D2)'),
                       (SELECT id FROM public.universities WHERE short_code = 'HUTECH'), 100),
-  ('8a65b5671d6ffff', (SELECT id FROM public.arenas WHERE name = 'Công Viên Landmark 81'),
+  ('8a65b5671d6ffff', (SELECT id FROM public.arenas WHERE name = 'Cụm Đại Học Bình Thạnh (Khu D2)'),
                       (SELECT id FROM public.universities WHERE short_code = 'HUTECH'), 80),
-  ('8a65b5671d4ffff', (SELECT id FROM public.arenas WHERE name = 'Công Viên Landmark 81'),
+  ('8a65b5671d4ffff', (SELECT id FROM public.arenas WHERE name = 'Cụm Đại Học Bình Thạnh (Khu D2)'),
                       (SELECT id FROM public.universities WHERE short_code = 'UEF'), 100),
   ('8a65b5671897fff', NULL, NULL, 100),
   ('8a65b5671887fff', NULL, NULL, 100),
@@ -81,14 +81,14 @@ ON CONFLICT (h3_index) DO NOTHING;
 Lấy các giá trị cần dùng trong test case:
 
 ```sql
-SELECT id, name, is_active FROM public.arenas ORDER BY name;          -- ghi lại id Landmark 81 = <LANDMARK_ID>
+SELECT id, name, is_active FROM public.arenas ORDER BY name;          -- ghi lại id Khu D2 = <D2_ID>
 SELECT h3_index, arena_id, owner_university_id, shield_hp, updated_at
 FROM public.h3_hexagons ORDER BY h3_index;                            -- ảnh chụp "trước"
 SELECT short_code, total_season_km FROM public.universities ORDER BY short_code;
 ```
 
 ```bash
-export LANDMARK_ID="<id Landmark 81>"
+export D2_ID="<id Khu D2>"
 ```
 
 ### 1.4. Dọn dẹp sau khi test
@@ -99,7 +99,7 @@ DELETE FROM public.h3_hexagons WHERE h3_index IN
    '8a65b5671887fff','8a65b56718a7fff','8a65b567199ffff');
 -- Nếu đã chạy TC-UI-05 / TC-UI-07:
 DELETE FROM public.running_sessions WHERE user_id = (SELECT id FROM public.users WHERE email = 'tester01@uef.edu.vn');
--- Trả lại km cho UEF: trừ đi tổng distanceMeters/1000 đã gửi trong claim-loop (TC-UI-05 gửi 0.5 km)
+-- Trả lại km cho UEF: trừ đi quãng đường của phiên chạy đã dùng để claim (TC-UI-05 dùng phiên chạy 500 m = 0.5 km)
 UPDATE public.universities SET total_season_km = total_season_km - 0.5 WHERE short_code = 'UEF';
 DELETE FROM public.users WHERE email = 'tester01@uef.edu.vn';
 -- Nếu đã đổi is_active ở TC-ARN-04:
@@ -182,7 +182,7 @@ curl -s -i "http://localhost:3000/api/v1/turf/hexagons"
 - **Expected:**
   - HTTP `200 OK`.
   - `success: true`; `data` có **7** phần tử (cộng thêm ô khác nếu DB đã có sẵn).
-  - `8a65b56718b7fff`: `universityCode: "HUTECH"`, `hexColor: "#FFCC00"`, `arenaId: <LANDMARK_ID>`, `shieldHp: 100`.
+  - `8a65b56718b7fff`: `universityCode: "HUTECH"`, `hexColor: "#FFCC00"`, `arenaId: <D2_ID>`, `shieldHp: 100`.
   - `8a65b5671d6ffff`: `shieldHp: 80`.
   - `8a65b5671d4ffff`: `universityCode: "UEF"`, `hexColor: "#ED1C24"`.
   - 4 ô còn lại: `ownerUniversityId: null`, `universityCode: null`, `arenaId: null`, `hexColor: "#44FFFFFF"`.
@@ -192,11 +192,11 @@ curl -s -i "http://localhost:3000/api/v1/turf/hexagons"
 ### TC-API-02: Lọc theo `arenaId` hợp lệ
 
 ```bash
-curl -s -i "http://localhost:3000/api/v1/turf/hexagons?arenaId=$LANDMARK_ID"
+curl -s -i "http://localhost:3000/api/v1/turf/hexagons?arenaId=$D2_ID"
 ```
 
-- **Expected:** `200`; `data` có **đúng 3** phần tử (`8a65b56718b7fff`, `8a65b5671d6ffff`, `8a65b5671d4ffff`), tất cả có `arenaId = <LANDMARK_ID>`. Không có ô trung lập nào.
-- **Verify DB:** `SELECT count(*) FROM h3_hexagons WHERE arena_id = '<LANDMARK_ID>';` → 3, khớp số phần tử.
+- **Expected:** `200`; `data` có **đúng 3** phần tử (`8a65b56718b7fff`, `8a65b5671d6ffff`, `8a65b5671d4ffff`), tất cả có `arenaId = <D2_ID>`. Không có ô trung lập nào.
+- **Verify DB:** `SELECT count(*) FROM h3_hexagons WHERE arena_id = '<D2_ID>';` → 3, khớp số phần tử.
 
 ### TC-API-03: Không cần quyền
 
@@ -299,7 +299,7 @@ curl -s -i "http://localhost:3000/api/v1/turf/arenas"
 
 - **Pre:** đã nạp dữ liệu mẫu 1.3.
 - **Bước:** gọi lại TC-ARN-01.
-- **Expected:** Landmark 81 có `hexCount: 3`; các Đấu trường khác `hexCount: 0`. **Không** được trả `180`/`250`/`120`/`160` (số trong cột `total_hexes` của seed).
+- **Expected:** Cụm Đại Học Bình Thạnh (Khu D2) có `hexCount: 3`; các Đấu trường khác, kể cả Landmark 81, `hexCount: 0`. **Không** được trả `180`/`250`/`120`/`160` (số trong cột `total_hexes` của seed).
 - **Verify DB:** `SELECT a.name, a.total_hexes, count(h.h3_index) FROM arenas a LEFT JOIN h3_hexagons h ON h.arena_id = a.id GROUP BY a.id;`, cột `count` khớp `hexCount`.
 
 ### TC-ARN-03: Không cần quyền
@@ -386,16 +386,28 @@ Quy ước màu khi vẽ (nền OSM sáng):
 ### TC-UI-05: Realtime khi chiếm ô (`hex_claimed`)
 
 - **Pre:**
-  - Có `$TOKEN` (mục 1.2) và dữ liệu mẫu 1.3.
+  - Có `$TOKEN` (mục 1.2), dữ liệu mẫu 1.3 và một phiên chạy ACTIVE (tạo ở bước dưới).
   - Mở **2 tab** `http://localhost:5000`, đặt cạnh nhau.
   - Ghi lại `total_season_km` của UEF.
-- **Bước:** trong cửa sổ thứ ba (Git Bash), gửi yêu cầu chiếm 3 ô trung lập. Có kèm `arenaId` để ô không bị mất gán Đấu trường (xem lưu ý ở mục 7).
+  - Tạo phiên chạy ACTIVE 500 m cho tester01, rồi ghi lại id làm `$SESSION_ID`:
 
-```bash
-curl -s -i -X POST "http://localhost:3000/api/v1/turf/claim-loop" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"boundaryH3Indexes\":[\"8a65b56718a7fff\",\"8a65b567199ffff\",\"8a65b5671887fff\"],\"distanceMeters\":500,\"durationSeconds\":180,\"arenaId\":\"$LANDMARK_ID\"}"
+```sql
+INSERT INTO public.running_sessions (user_id, status, distance_meters, duration_seconds)
+SELECT id, 'ACTIVE', 500, 180 FROM public.users WHERE email = 'tester01@uef.edu.vn'
+RETURNING id;
 ```
 
-- **Expected API:** `201 Created`; body có `success: true`, `claimedCount` ≥ 3, `claimedHexes` chứa 3 ô trên, `addedKm: 0.5`.
+```bash
+export SESSION_ID="<id vừa trả về>"
+```
+
+- **Bước:** trong cửa sổ thứ ba (Git Bash), gửi yêu cầu chiếm 3 ô trung lập trong Khu D2. Có kèm `arenaId` để 3 ô được gán vào Đấu trường D2.
+
+```bash
+curl -s -i -X POST "http://localhost:3000/api/v1/turf/claim-loop" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"boundaryH3Indexes\":[\"8a65b56718a7fff\",\"8a65b567199ffff\",\"8a65b5671887fff\"],\"sessionId\":\"$SESSION_ID\",\"arenaId\":\"$D2_ID\"}"
+```
+
+- **Expected API:** `201 Created`; body có `success: true`, `claimedCount` = 3, `claimedHexes` chứa đúng 3 ô trên, `addedKm: 0.5`.
 - **Expected UI:** ở **cả hai tab**, 3 ô đó chuyển sang **đỏ UEF trong khoảng 1 giây**, **không cần tải lại**. Các ô khác giữ nguyên màu.
 - **Verify Network (tab WS):** kết nối `turf-ws` có một frame nhận dạng `42/turf-ws,["hex_claimed",{...}]`, trong đó có `universityCode: "UEF"` và `claimedHexes`.
 - **Verify log backend:** có dòng `[Broadcast] Trường UEF đã chiếm N ô lục giác!`. Lúc mở mỗi tab có dòng `Client kết nối WebSocket: <id>`.
@@ -404,11 +416,10 @@ curl -s -i -X POST "http://localhost:3000/api/v1/turf/claim-loop" -H "Authorizat
 ```sql
 SELECT h3_index, owner_university_id, shield_hp, arena_id, last_patrolled_at
 FROM h3_hexagons WHERE h3_index IN ('8a65b56718a7fff','8a65b567199ffff','8a65b5671887fff');
--- owner = id UEF, shield_hp = 100, last_patrolled_at = thời điểm vừa gọi, arena_id = LANDMARK_ID
+-- owner = id UEF, shield_hp = 100, last_patrolled_at = thời điểm vừa gọi, arena_id = D2_ID
 
-SELECT session_type, distance_meters, duration_seconds, hex_count, is_valid
-FROM running_sessions WHERE user_id = (SELECT id FROM users WHERE email = 'tester01@uef.edu.vn');
--- thêm 1 dòng: ARENA_LOOP, 500, 180, hex_count = claimedCount, is_valid = true
+SELECT status, distance_meters, hex_count FROM running_sessions WHERE id = '<SESSION_ID>';
+-- status = COMPLETED, distance_meters = 500, hex_count = 3
 
 SELECT short_code, total_season_km FROM universities WHERE short_code = 'UEF';
 -- tăng đúng 0.5 so với số đã ghi
@@ -418,15 +429,15 @@ SELECT short_code, total_season_km FROM universities WHERE short_code = 'UEF';
 
 ### TC-UI-06: Sự kiện có ô không nằm trên bản đồ
 
-- **Ngữ cảnh:** `H3Service` hiện đảo lat/lng, nên `claimedHexes` có thể chứa thêm ô "bên trong vòng" nằm ở vị trí khác hẳn hoặc không có trong lần tải ban đầu.
+- **Ngữ cảnh:** sau C1, `claimedHexes` gồm cả ô biên và ô bên trong vòng. Ô bên trong có thể chưa có trên bản đồ nếu không nằm trong dữ liệu đã tải.
 - **Bước:** sau TC-UI-05, so `claimedCount` trong response với số ô đổi màu trên bản đồ.
 - **Expected:** chỉ những ô **đã có trên bản đồ** đổi màu; **không xuất hiện ô mới** ở bất kỳ đâu (kéo bản đồ ra xa để kiểm). Không có lỗi trong Console.
-- **Lưu ý:** nếu `claimedCount` > 3 thì backend đã tạo thêm dòng `h3_hexagons` mới. Tải lại trang thì các ô này mới hiện (nếu nằm trong khung nhìn). Đó là hành vi của Module 5 (DEV 1), không thuộc phạm vi test này.
+- **Lưu ý:** TC-UI-05 dùng vòng 3 ô không có ô bên trong nên `claimedCount` = 3. Với vòng lớn hơn, backend tạo thêm dòng `h3_hexagons` cho ô bên trong; các ô này chỉ hiện sau khi tải lại trang.
 
 ### TC-UI-07: Chiếm ô khi không có token
 
 ```bash
-curl -s -i -X POST "http://localhost:3000/api/v1/turf/claim-loop" -H "Content-Type: application/json" -d '{"boundaryH3Indexes":["8a65b5671897fff"],"distanceMeters":100,"durationSeconds":60}'
+curl -s -i -X POST "http://localhost:3000/api/v1/turf/claim-loop" -H "Content-Type: application/json" -d '{"boundaryH3Indexes":["8a65b56718a7fff","8a65b567199ffff","8a65b5671887fff"],"sessionId":"00000000-0000-4000-8000-000000000000"}'
 ```
 
 - **Expected:** `401 Unauthorized`, `success: false`, `code: "HTTP_401"`.
@@ -462,7 +473,7 @@ curl -s -i -X POST "http://localhost:3000/api/v1/turf/claim-loop" -H "Content-Ty
 cd backend && npm test
 ```
 
-- **Expected:** `Tests: 17 passed, 17 total`. Riêng `turf.service.spec.ts` có 8 test (lọc theo Đấu trường, `ERR_303`, ô trung lập, `hexCount` đếm thật, loại Đấu trường đã tắt...).
+- **Expected:** `Tests: 160 passed, 5 skipped, 165 total` (số tại thời điểm cập nhật H4, có thể tăng theo thời gian). Các file liên quan: `h3.service.spec.ts` (C1: ô bên trong, `ERR_302`, `ERR_301`) và `turf.service.spec.ts` (`ERR_303`, `ERR_304`, claim không mock `H3Service`).
 
 ### TC-AUTO-02: Client
 
@@ -479,12 +490,10 @@ flutter test
 
 | # | Hiện tượng | Ảnh hưởng tới test | Ghi chú |
 |---|---|---|---|
-| 1 | `claim-loop` ghi đè `arena_id = NULL` cho ô được chiếm nếu body **không** có `arenaId` | Sau TC-UI-05 mà quên `arenaId`, TC-API-02 và TC-ARN-02 sẽ đếm thiếu ô | Lỗi trong `TurfService.claimLoop` (Module 5). Nên mở ticket |
-| 2 | `H3Service` đảo lat/lng khi tính ô bên trong vòng | `claimedCount` có thể khác 3; có thể sinh ô lạ | Đã ghi trên bản đồ wayfinder, thuộc DEV 1 |
-| 3 | `hex_claimed` vẫn gửi `claimedBy` (email/tên) | Thấy trong frame WS ở TC-UI-05 | Hợp đồng #3 đã quyết bỏ, chưa sửa backend |
-| 4 | `claim-loop` chưa đòi `sessionId` | TC-UI-05 gọi thẳng được | Theo hợp đồng #3 sẽ thêm sau |
-| 5 | App không tự tải lại ô khi backend sống lại | TC-UI-08 phải tải lại tay | Ngoài phạm vi hiện tại |
-| 6 | Tile OSM tạm thời (Carto cần API key) | Nền sáng, màu ô trung lập đậm hơn dự kiến | Chờ ticket #16 |
+| 1 | App không tự tải lại ô khi backend sống lại | TC-UI-08 phải tải lại tay | Ngoài phạm vi hiện tại |
+| 2 | Tile OSM tạm thời (Carto cần API key) | Nền sáng, màu ô trung lập đậm hơn dự kiến | Chờ ticket #16 |
+
+Các lỗi cũ (ghi đè `arena_id`, đảo lat/lng, `claimedBy`, thiếu `sessionId`) đã được sửa trong C1 và H4, nên không còn trong bảng.
 
 ---
 

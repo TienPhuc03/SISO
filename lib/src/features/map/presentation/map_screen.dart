@@ -41,8 +41,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   LatLng? _userPosition;
   bool _locating = false;
 
-  /// Chỉ hiện vòng xoay trên nút khi người dùng tự bấm (lần căn tự động lúc mở bản đồ thì chạy ngầm).
-  bool _showLocatingSpinner = false;
+  /// Người dùng đã bấm "Vị trí của tôi" và đang chờ kết quả (kể cả khi bấm lúc lần lấy GPS
+  /// tự động còn chạy ngầm): hiện vòng xoay, luôn căn camera và báo lý do nếu không căn được.
+  bool _userWaiting = false;
+
+  /// Người dùng đã tự kéo/zoom bản đồ: lần căn TỰ ĐỘNG không được giật camera về nữa.
+  bool _userMovedMap = false;
   Timer? _holdTimer;
 
   @override
@@ -59,34 +63,64 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   /// Lấy vị trí rồi căn camera nếu người dùng đang ở trong khu thi đấu.
-  /// [userInitiated] = bấm nút "Vị trí của tôi": khi đó báo lý do nếu không căn được.
+  ///
+  /// - Căn ngay bằng vị trí gần nhất máy còn nhớ (nếu có), rồi tinh chỉnh bằng lần đo GPS mới.
+  /// - [userInitiated] = bấm nút "Vị trí của tôi": luôn căn camera và báo lý do nếu không căn được.
+  ///   Bấm khi lần lấy GPS tự động còn đang chạy thì chờ chung kết quả đó (không gọi GPS lần hai).
+  /// - Lần căn tự động bỏ qua việc di chuyển camera nếu người dùng đã tự kéo/zoom bản đồ.
   Future<void> _locateUser({required bool userInitiated}) async {
+    if (userInitiated) setState(() => _userWaiting = true);
     if (_locating) return;
-    setState(() {
-      _locating = true;
-      _showLocatingSpinner = userInitiated;
-    });
-    final position = await ref.read(userLocationSourceProvider).currentPosition();
+    _locating = true;
+
+    final source = ref.read(userLocationSourceProvider);
+    final lastKnown = cameraTargetFor(await source.lastKnownPosition());
     if (!mounted) return;
+    if (lastKnown != null) {
+      setState(() => _userPosition = lastKnown);
+      _moveCameraIfAllowed(lastKnown);
+    }
+
+    final position = await source.currentPosition();
+    if (!mounted) return;
+    final userWaiting = _userWaiting;
     setState(() {
       _locating = false;
-      _showLocatingSpinner = false;
-      _userPosition = position;
+      _userWaiting = false;
+      if (position != null) _userPosition = position;
     });
 
     final target = cameraTargetFor(position);
-    if (target != null && _mapReady) {
-      _mapController.move(target, MapScreen.userZoom);
+    if (target != null) {
+      _moveCameraIfAllowed(target, force: userWaiting);
       return;
     }
-    if (!userInitiated) return;
+    if (!userWaiting) return;
 
-    final message = position == null
-        ? 'Không lấy được vị trí. Hãy bật định vị và cho phép SISO dùng vị trí.'
-        : 'Bạn đang ở ngoài khu thi đấu Bình Thạnh, bản đồ giữ nguyên khu vực Đấu trường.';
+    final String message;
+    if (position != null) {
+      message = 'Bạn đang ở ngoài khu thi đấu Bình Thạnh, bản đồ giữ nguyên khu vực Đấu trường.';
+    } else if (lastKnown != null) {
+      _moveCameraIfAllowed(lastKnown, force: true);
+      message = 'Chưa lấy được vị trí mới, đang hiện vị trí gần nhất máy còn nhớ.';
+    } else {
+      message = 'Không lấy được vị trí. Hãy bật định vị và cho phép SISO dùng vị trí.';
+    }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Căn camera tới [target]. Lần tự động ([force] = false) không giật camera nếu người dùng
+  /// đã tự kéo/zoom bản đồ; khi người dùng bấm nút thì luôn căn.
+  void _moveCameraIfAllowed(LatLng target, {bool force = false}) {
+    if (!_mapReady) return;
+    if (!force && _userMovedMap) return;
+    _mapController.move(target, MapScreen.userZoom);
+  }
+
+  void _onPositionChanged(MapCamera camera, bool hasGesture) {
+    if (hasGesture) _userMovedMap = true;
   }
 
   void _startHold() {
@@ -132,6 +166,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               initialCenter: MapScreen.initialCenter,
               initialZoom: MapScreen.initialZoom,
               onMapReady: _onMapReady,
+              onPositionChanged: _onPositionChanged,
             ),
             children: [
               TileLayer(
@@ -176,8 +211,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               key: const Key('my_location_button'),
               heroTag: 'my_location',
               tooltip: 'Vị trí của tôi',
-              onPressed: _locating ? null : () => _locateUser(userInitiated: true),
-              child: _showLocatingSpinner
+              onPressed: _userWaiting ? null : () => _locateUser(userInitiated: true),
+              child: _userWaiting
                   ? const SizedBox.square(
                       dimension: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
