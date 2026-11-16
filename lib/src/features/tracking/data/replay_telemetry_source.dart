@@ -17,44 +17,50 @@ class ReplayWindow {
   final TelemetryWindow window;
 }
 
-/// Cắt log thành các cửa sổ 256 mẫu liên tiếp, không chồng nhau (bỏ phần lẻ cuối log).
+/// Dựng một cửa sổ từ 256 mẫu gia tốc [chunk] và các lần GPS [gps] (sắp theo thời gian).
+/// Dùng chung cho phát lại log và cảm biến thật (`DeviceTelemetrySource`).
 ///
-/// - `averageSpeedMps`: trung bình tốc độ GPS hợp lệ (>= 0) trong khoảng của cửa sổ;
-///   không có thì lấy lần GPS gần nhất trước đó; không có nữa thì 0.
+/// - `averageSpeedMps`: trung bình tốc độ GPS hợp lệ (>= 0, iOS trả -1 khi chưa có) trong khoảng
+///   của cửa sổ; không có thì lấy lần GPS gần nhất trước đó; không có nữa thì 0.
 /// - `horizontalAccuracy`: sai số TỆ NHẤT trong khoảng (hoặc lần gần nhất trước đó).
 /// - `isMocked`: true nếu có bất kỳ lần GPS nào trong khoảng bị đánh dấu giả.
-/// - `timestampMs` của mẫu = [baseEpochMs] + t trong log.
+/// - `timestampMs` của mẫu = [baseEpochMs] + t của mẫu.
+TelemetryWindow buildWindow(List<AccelRecord> chunk, List<GpsRecord> gps, {required int baseEpochMs}) {
+  final t0 = chunk.first.tMs;
+  final t1 = chunk.last.tMs;
+
+  var inWindow = gps.where((g) => g.tMs >= t0 && g.tMs <= t1).toList();
+  if (inWindow.isEmpty) {
+    final before = gps.where((g) => g.tMs < t0);
+    if (before.isNotEmpty) inWindow = [before.last];
+  }
+
+  final speeds = inWindow.map((g) => g.speedMps).where((s) => s >= 0).toList();
+  final avgSpeed = speeds.isEmpty ? 0.0 : speeds.reduce((a, b) => a + b) / speeds.length;
+  final accuracy =
+      inWindow.isEmpty ? noGpsAccuracyM : inWindow.map((g) => g.accuracyM).reduce((a, b) => a > b ? a : b);
+
+  return TelemetryWindow(
+    samples: [
+      for (final a in chunk) ImuSample(ax: a.x, ay: a.y, az: a.z, timestampMs: baseEpochMs + a.tMs),
+    ],
+    averageSpeedMps: avgSpeed,
+    horizontalAccuracy: accuracy,
+    isMocked: inWindow.any((g) => g.isMocked),
+  );
+}
+
+/// Cắt log thành các cửa sổ 256 mẫu liên tiếp, không chồng nhau (bỏ phần lẻ cuối log).
+/// Số liệu GPS của từng cửa sổ tính như [buildWindow].
 List<ReplayWindow> buildReplayWindows(TelemetryLog log, {required int baseEpochMs}) {
   final result = <ReplayWindow>[];
   const size = TelemetryWindow.size;
   for (var start = 0; start + size <= log.accel.length; start += size) {
     final chunk = log.accel.sublist(start, start + size);
-    final t0 = chunk.first.tMs;
-    final t1 = chunk.last.tMs;
-
-    var gps = log.gps.where((g) => g.tMs >= t0 && g.tMs <= t1).toList();
-    if (gps.isEmpty) {
-      final before = log.gps.where((g) => g.tMs < t0);
-      if (before.isNotEmpty) gps = [before.last];
-    }
-
-    final speeds = gps.map((g) => g.speedMps).where((s) => s >= 0).toList();
-    final avgSpeed = speeds.isEmpty ? 0.0 : speeds.reduce((a, b) => a + b) / speeds.length;
-    final accuracy =
-        gps.isEmpty ? noGpsAccuracyM : gps.map((g) => g.accuracyM).reduce((a, b) => a > b ? a : b);
-
     result.add(ReplayWindow(
-      startTMs: t0,
-      endTMs: t1,
-      window: TelemetryWindow(
-        samples: [
-          for (final a in chunk)
-            ImuSample(ax: a.x, ay: a.y, az: a.z, timestampMs: baseEpochMs + a.tMs),
-        ],
-        averageSpeedMps: avgSpeed,
-        horizontalAccuracy: accuracy,
-        isMocked: gps.any((g) => g.isMocked),
-      ),
+      startTMs: chunk.first.tMs,
+      endTMs: chunk.last.tMs,
+      window: buildWindow(chunk, log.gps, baseEpochMs: baseEpochMs),
     ));
   }
   return result;

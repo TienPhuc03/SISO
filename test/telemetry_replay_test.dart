@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:siso_project/src/features/tracking/data/device_telemetry_source.dart';
 import 'package:siso_project/src/features/tracking/data/replay_log_assets.dart';
 import 'package:siso_project/src/features/tracking/data/replay_telemetry_source.dart';
 import 'package:siso_project/src/features/tracking/data/simulated_telemetry_source.dart';
@@ -241,10 +242,18 @@ void main() {
       return ProviderScope.containerOf(tester.element(find.byType(TelemetrySourcePicker)));
     }
 
-    testWidgets('mặc định là nguồn giả lập', (tester) async {
+    testWidgets('mặc định là cảm biến thật; chọn được Giả lập rồi quay về Cảm biến', (tester) async {
       final container = await pumpPicker(tester, const []);
-      expect(container.read(telemetrySourceChoiceProvider), isA<SimulatedSourceChoice>());
+      expect(container.read(telemetrySourceChoiceProvider), isA<DeviceSourceChoice>());
+      expect(container.read(telemetryWindowSourceProvider), isA<DeviceTelemetrySource>());
+
+      await tester.tap(find.text('Giả lập'));
+      await tester.pumpAndSettle();
       expect(container.read(telemetryWindowSourceProvider), isA<SimulatedTelemetrySource>());
+
+      await tester.tap(find.text('Cảm biến'));
+      await tester.pumpAndSettle();
+      expect(container.read(telemetryWindowSourceProvider), isA<DeviceTelemetrySource>());
     });
 
     testWidgets('chưa có log trong assets: hiện hướng dẫn', (tester) async {
@@ -299,7 +308,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Không đọc được log'), findsOneWidget);
-      expect(container.read(telemetrySourceChoiceProvider), isA<SimulatedSourceChoice>());
+      expect(container.read(telemetrySourceChoiceProvider), isA<DeviceSourceChoice>());
     });
 
     testWidgets('đang chạy (enabled = false): không đổi được nguồn', (tester) async {
@@ -360,6 +369,26 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('bản phát hành (không debug, không SISO_DEMO): ẩn bộ chọn và bảng giả lập, luôn dùng cảm biến thật',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          allowFakeSourcesProvider.overrideWithValue(false),
+          // Kể cả khi lựa chọn đang là giả lập, nguồn thực dùng vẫn phải là cảm biến thật.
+          telemetrySourceChoiceProvider.overrideWith((ref) => const SimulatedSourceChoice()),
+        ],
+        child: const MaterialApp(home: ActiveRunScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('source_picker')), findsNothing);
+    expect(find.text('Nguồn giả lập (không phải cảm biến thật)'), findsNothing);
+    final container = ProviderScope.containerOf(tester.element(find.byType(ActiveRunScreen)));
+    expect(container.read(telemetryWindowSourceProvider), isA<DeviceTelemetrySource>());
+  });
+
   test('assetFileName lấy tên file', () {
     expect(assetFileName('assets/telemetry_logs/siso_run_x.jsonl'), 'siso_run_x.jsonl');
   });
@@ -371,7 +400,12 @@ class _RecordingRepository extends TelemetryRepository {
   final sessionIds = <String?>[];
 
   @override
-  Future<VerifyWindowResult> verifyWindow(TelemetryWindow window, {String? sessionId}) async {
+  Future<VerifyWindowResult> verifyWindow(
+    TelemetryWindow window, {
+    String? sessionId,
+    String? signingKey,
+    int? seq,
+  }) async {
     windows.add(window);
     sessionIds.add(sessionId);
     return const VerifyWindowResult(
@@ -383,4 +417,7 @@ class _RecordingRepository extends TelemetryRepository {
       message: 'ok',
     );
   }
+
+  @override
+  Future<double> finishSession(String sessionId) async => 0;
 }

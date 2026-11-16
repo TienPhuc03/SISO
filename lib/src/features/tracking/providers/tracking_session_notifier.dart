@@ -1,13 +1,21 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/siso_exceptions.dart';
+import '../data/device_telemetry_source.dart';
 import '../data/replay_telemetry_source.dart';
 import '../data/simulated_telemetry_source.dart';
 import '../data/telemetry_repository.dart';
 import '../domain/telemetry_source_choice.dart';
 import '../domain/telemetry_window.dart';
+
+const _rejectionCodes = {
+  SisoErrorCodes.mockGpsDetected,
+  SisoErrorCodes.vehicleSpeedMismatch,
+  SisoErrorCodes.invalidSignature,
+};
 
 /// Trạng thái Phiên chạy phía client (Idle -> Tracking -> EvaluatingLoop | Rejected).
 enum TrackingStatus { idle, tracking, evaluatingLoop, rejected }
@@ -20,6 +28,8 @@ class RunState {
     this.cadenceSpm,
     this.windowWarning = false,
     this.connectionIssue = false,
+    this.gpsSearching = false,
+    this.addedKm,
     this.errorCode,
     this.errorMessage,
   });
@@ -39,6 +49,12 @@ class RunState {
   /// Cửa sổ gần nhất không gửi được vì lỗi mạng; Phiên chạy vẫn tiếp tục.
   final bool connectionIssue;
 
+  /// Cửa sổ gần nhất bị server trả ERR_203 (chưa có tín hiệu vệ tinh); Phiên chạy vẫn tiếp tục.
+  final bool gpsSearching;
+
+  /// Km server đã cộng khi kết thúc Phiên chạy tự do; null khi chưa kết thúc.
+  final double? addedKm;
+
   final String? errorCode;
   final String? errorMessage;
 
@@ -49,6 +65,8 @@ class RunState {
     int? cadenceSpm,
     bool? windowWarning,
     bool? connectionIssue,
+    bool? gpsSearching,
+    double? addedKm,
     String? errorCode,
     String? errorMessage,
   }) =>
@@ -59,6 +77,8 @@ class RunState {
         cadenceSpm: cadenceSpm ?? this.cadenceSpm,
         windowWarning: windowWarning ?? this.windowWarning,
         connectionIssue: connectionIssue ?? this.connectionIssue,
+        gpsSearching: gpsSearching ?? this.gpsSearching,
+        addedKm: addedKm ?? this.addedKm,
         errorCode: errorCode ?? this.errorCode,
         errorMessage: errorMessage ?? this.errorMessage,
       );
@@ -86,7 +106,11 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
   String? _signingKey;
   int _seq = 0;
 
+  /// Đang chờ gửi cửa sổ cuối và `finish`; chặn bấm Dừng/Bắt đầu chồng lên nhau.
+  bool _stopping = false;
+
   void startRun() {
+    if (_stopping) return;
     _cancelSubscriptions();
     _signingKey = null;
     _seq = 0;
@@ -96,17 +120,56 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
         state = state.copyWith(speedKmh: mps * 3.6);
       }
     });
-    _windowSub = _source.windows.listen((window) {
-      _pending = _pending.then((_) => _verify(window));
-    });
+    _windowSub = _source.windows.listen(
+      (window) => _pending = _pending.then((_) => _verify(window)),
+      onError: _onSourceError,
+    );
     _source.start();
   }
 
-  void stopRun() {
+  /// Không đọc được cảm biến (chưa cấp quyền vị trí, GPS tắt giữa chừng): dừng chạy, vẫn cộng km đã kiểm định.
+  void _onSourceError(Object error) {
+    if (!mounted || state.status != TrackingStatus.tracking) return;
+    state = error is SisoException
+        ? state.copyWith(errorCode: error.code, errorMessage: error.message)
+        : state.copyWith(errorCode: 'ERR_SENSOR', errorMessage: 'Không đọc được cảm biến: $error');
+    stopRun();
+  }
+
+  /// Dừng nguồn dữ liệu, chờ các cửa sổ đã nhận được kiểm định xong rồi gọi `finish` để server cộng km.
+  Future<void> stopRun() async {
+    if (_stopping) return;
+    _stopping = true;
     _cancelSubscriptions();
     _source.stop();
-    if (mounted && state.status != TrackingStatus.rejected) {
-      state = state.copyWith(status: TrackingStatus.idle);
+    try {
+      // Cửa sổ cuối phải được cộng quãng đường trước khi Phiên chạy chuyển COMPLETED.
+      await _pending;
+      if (!mounted || state.status != TrackingStatus.tracking) return;
+      final sessionId = state.sessionId;
+      if (sessionId == null) {
+        state = state.copyWith(status: TrackingStatus.idle);
+        return;
+      }
+      try {
+        final km = await _repository.finishSession(sessionId);
+        if (mounted) state = state.copyWith(status: TrackingStatus.idle, addedKm: km);
+      } on SisoException catch (e) {
+        if (mounted) {
+          state = state.copyWith(status: TrackingStatus.idle, errorCode: e.code, errorMessage: e.message);
+        }
+      } catch (_) {
+        // shortcut: không thử gửi lại, km lần này mất; thêm hàng đợi gửi lại nếu field test thấy mất mạng thường xuyên.
+        if (mounted) {
+          state = state.copyWith(
+            status: TrackingStatus.idle,
+            errorCode: 'ERR_NETWORK',
+            errorMessage: 'Không gửi được kết quả Phiên chạy, quãng đường lần này chưa được cộng.',
+          );
+        }
+      }
+    } finally {
+      _stopping = false;
     }
   }
 
@@ -130,14 +193,20 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
         cadenceSpm: result.cadenceSpm,
         windowWarning: !result.windowPassed,
         connectionIssue: false,
+        gpsSearching: false,
       );
     } on SisoException catch (e) {
       if (!mounted) return;
+      // ERR_203: server chỉ bỏ cửa sổ này (mất tín hiệu vệ tinh), Phiên chạy vẫn tiếp tục.
+      if (e.code == SisoErrorCodes.gpsAccuracyLow) {
+        state = state.copyWith(gpsSearching: true, connectionIssue: false);
+        return;
+      }
       _cancelSubscriptions();
       _source.stop();
-      // Mã ERR_2xx là kết luận của Anti-GIGO: Phiên bị loại. Các lỗi khác (chưa đăng nhập,
-      // dữ liệu sai định dạng) chỉ dừng Phiên chạy, không phải bị loại.
-      final rejected = e.code.startsWith('ERR_2');
+      // Chỉ các mã Anti-GIGO này là Phiên bị loại. Các lỗi khác (ERR_204 Phiên đã kết thúc,
+      // chưa đăng nhập, dữ liệu sai định dạng) chỉ dừng Phiên chạy, không phải bị loại.
+      final rejected = _rejectionCodes.contains(e.code);
       state = state.copyWith(
         status: rejected ? TrackingStatus.rejected : TrackingStatus.idle,
         errorCode: e.code,
@@ -164,13 +233,26 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
   }
 }
 
-/// Nguồn đang chọn trên màn Chạy: giả lập (mặc định) hoặc phát lại log thật (issue #8).
-final telemetrySourceChoiceProvider =
-    StateProvider<TelemetrySourceChoice>((ref) => const SimulatedSourceChoice());
+/// Bản build Demo Simulator (Ngày 29): `flutter build ipa --dart-define=SISO_DEMO=true`.
+const kSisoDemo = bool.fromEnvironment('SISO_DEMO');
 
-/// Mặc định dùng nguồn GIẢ LẬP. Khi DEV 1 xong cảm biến thật, thêm lựa chọn nguồn thật vào đây.
+/// Có được dùng nguồn giả lập / phát lại log không: chỉ khi debug hoặc bản demo.
+/// Bản phát hành luôn dùng cảm biến thật. Override được trong test.
+final allowFakeSourcesProvider = Provider<bool>((ref) => kDebugMode || kSisoDemo);
+
+/// Nguồn đang chọn trên màn Chạy: cảm biến thật (mặc định), giả lập, hoặc phát lại log (issue #8).
+final telemetrySourceChoiceProvider =
+    StateProvider<TelemetrySourceChoice>((ref) => const DeviceSourceChoice());
+
 final telemetryWindowSourceProvider = Provider<TelemetryWindowSource>((ref) {
-  switch (ref.watch(telemetrySourceChoiceProvider)) {
+  // Chặn cả ở đây, không chỉ ẩn bộ chọn: bản phát hành không bao giờ gửi dữ liệu giả lên server.
+  final choice =
+      ref.watch(allowFakeSourcesProvider) ? ref.watch(telemetrySourceChoiceProvider) : const DeviceSourceChoice();
+  switch (choice) {
+    case DeviceSourceChoice():
+      final source = DeviceTelemetrySource();
+      ref.onDispose(source.dispose);
+      return source;
     case SimulatedSourceChoice():
       final source = SimulatedTelemetrySource();
       ref.onDispose(source.dispose);
