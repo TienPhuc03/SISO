@@ -6,6 +6,8 @@ import { TelemetryPayloadDto } from './dto/telemetry-payload.dto';
 import { SCENARIOS } from './synthetic-imu.fixture';
 import { RunningSession } from '../../entities/running-session.entity';
 import { GigoAuditLog } from '../../entities/gigo-audit-log.entity';
+import { User } from '../../entities/user.entity';
+import { University } from '../../entities/university.entity';
 import { ConfigService } from '@nestjs/config';
 import { deriveSigningKey, signBody } from './telemetry-signature';
 
@@ -49,6 +51,8 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
     manager: { transaction: jest.Mock };
   };
   let audits: { create: jest.Mock; save: jest.Mock };
+  /** EntityManager giả trong transaction: verifyWindow dùng getRepository, finishSession dùng findOne/increment/update. */
+  let tx: { getRepository: (entity: unknown) => unknown; findOne: jest.Mock; increment: jest.Mock; update: jest.Mock };
   let nextSeq: number;
   /** Kết cục của transaction gần nhất: commit (callback xong) hay rollback (callback ném lỗi). */
   let txOutcome: 'commit' | 'rollback' | null;
@@ -72,7 +76,12 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
     };
     audits = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
     txOutcome = null;
-    const tx = { getRepository: (entity: unknown) => (entity === RunningSession ? sessions : audits) };
+    tx = {
+      getRepository: (entity: unknown) => (entity === RunningSession ? sessions : audits),
+      findOne: jest.fn(),
+      increment: jest.fn(),
+      update: jest.fn(),
+    };
     sessions.manager.transaction.mockImplementation(async (work: (m: typeof tx) => Promise<unknown>) => {
       try {
         const result = await work(tx);
@@ -187,13 +196,46 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
     expect(res.consecutiveFailures).toBe(1);
   });
 
-  it('GPS giả bị loại ngay ở cửa sổ đầu tiên, không chờ cửa sổ thứ hai', async () => {
+  it('GPS giả bị loại ngay ở cửa sổ đầu tiên: ghi nhật ký GIGO, không tạo Phiên chạy', async () => {
     await expect(verify(payload({ isMocked: true }))).rejects.toMatchObject({
       response: { code: 'ERR_201' },
     });
 
-    expect(sessions.save.mock.calls.at(-1)[0]).toMatchObject({ status: 'REJECTED', rejection_reason: 'ERR_201' });
-    expect(audits.save).toHaveBeenCalledWith(expect.objectContaining({ rejection_type: 'ERR_201', imu_cadence_spm: 0 }));
+    expect(sessions.save).not.toHaveBeenCalled();
+    expect(audits.save).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: USER, session_id: null, rejection_type: 'ERR_201', imu_cadence_spm: 0 }),
+    );
+  });
+
+  it('cửa sổ đầu vượt tốc độ người: ERR_202, không tạo Phiên chạy', async () => {
+    await expect(verify(payload({ averageSpeedMps: 12 }))).rejects.toMatchObject({
+      response: { code: 'ERR_202' },
+    });
+
+    expect(sessions.save).not.toHaveBeenCalled();
+    expect(audits.save).toHaveBeenCalledWith(expect.objectContaining({ session_id: null, rejection_type: 'ERR_202' }));
+  });
+
+  describe('ERR_203 (mất tín hiệu vệ tinh) chỉ bỏ cửa sổ, không loại Phiên', () => {
+    it('cửa sổ đầu có sai số -1 (iOS chưa có tín hiệu): ERR_203, không tạo Phiên, không ghi nhật ký', async () => {
+      await expect(verify(payload({ horizontalAccuracy: -1 }))).rejects.toMatchObject({
+        response: { code: 'ERR_203' },
+      });
+
+      expect(sessions.save).not.toHaveBeenCalled();
+      expect(audits.save).not.toHaveBeenCalled();
+    });
+
+    it('giữa Phiên chạy sai số > 20 m: ERR_203, Phiên vẫn ACTIVE và không cộng quãng đường', async () => {
+      sessions.findOne.mockResolvedValue(activeSession());
+
+      await expect(verify(payload({ sessionId: SESSION, horizontalAccuracy: 35 }))).rejects.toMatchObject({
+        response: { code: 'ERR_203' },
+      });
+
+      expect(sessions.save).not.toHaveBeenCalled();
+      expect(audits.save).not.toHaveBeenCalled();
+    });
   });
 
   it('sessionId không tồn tại hoặc của Sinh viên khác: 404 ERR_204', async () => {
@@ -289,6 +331,50 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
       const signature = signBody(deriveSigningKey(SECRET, 'phien-khac'), rawBody);
 
       await expectRejected(service.verifyWindow(USER, dto, { rawBody, signature }));
+    });
+  });
+
+  describe('finishSession: kết thúc Phiên chạy tự do', () => {
+    const UNI = '33333333-3333-4333-8333-333333333333';
+    const givenSession = (session: RunningSession | null) =>
+      tx.findOne.mockImplementation(async (entity) =>
+        entity === RunningSession ? session : { id: USER, university_id: UNI },
+      );
+
+    it('cộng km đã kiểm định cho Sinh viên và trường, chuyển COMPLETED', async () => {
+      givenSession(activeSession({ distance_meters: 2456 }));
+
+      const res = await service.finishSession(USER, SESSION);
+
+      expect(tx.findOne).toHaveBeenCalledWith(RunningSession, {
+        where: { id: SESSION, user_id: USER },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(tx.increment).toHaveBeenCalledWith(User, { id: USER }, 'personal_km', 2.456);
+      expect(tx.increment).toHaveBeenCalledWith(University, { id: UNI }, 'total_season_km', 2.456);
+      expect(tx.update).toHaveBeenCalledWith(RunningSession, SESSION, { status: 'COMPLETED' });
+      expect(res).toEqual({ sessionId: SESSION, distanceMeters: 2456, durationSeconds: 30, addedKm: 2.46 });
+    });
+
+    it('Phiên của người khác hoặc không tồn tại: 404 ERR_204, không cộng km', async () => {
+      givenSession(null);
+
+      await expect(service.finishSession(USER, SESSION)).rejects.toMatchObject({ response: { code: 'ERR_204' } });
+      expect(tx.increment).not.toHaveBeenCalled();
+    });
+
+    it('kết thúc lần hai (đã COMPLETED): 404 ERR_204, không cộng km lần nữa', async () => {
+      givenSession(activeSession({ status: 'COMPLETED' }));
+
+      await expect(service.finishSession(USER, SESSION)).rejects.toMatchObject({ response: { code: 'ERR_204' } });
+      expect(tx.increment).not.toHaveBeenCalled();
+    });
+
+    it('Phiên đã bị loại: 400 kèm mã lý do loại, không cộng km', async () => {
+      givenSession(activeSession({ status: 'REJECTED', rejection_reason: 'ERR_202' }));
+
+      await expect(service.finishSession(USER, SESSION)).rejects.toMatchObject({ response: { code: 'ERR_202' } });
+      expect(tx.increment).not.toHaveBeenCalled();
     });
   });
 });

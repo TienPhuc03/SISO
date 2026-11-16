@@ -50,4 +50,15 @@ describe('TelemetryController: truyền body thô để kiểm chữ ký', () =>
     expect(proof.signature).toBe('abc123');
     expect(proof.rawBody.toString()).toBe(raw);
   });
+
+  it('sai số GPS -1 của iOS qua được DTO để service trả ERR_203, không bị chặn thành HTTP_400', async () => {
+    const samples = Array.from({ length: IMU_WINDOW_SIZE }, (_, i) => ({ ax: 0, ay: 0, az: 9.8, timestamp: i }));
+
+    await request(app.getHttpServer())
+      .post('/api/v1/telemetry/verify')
+      .send({ averageSpeedMps: 0, horizontalAccuracy: -1, isMocked: false, imuSamples: samples })
+      .expect(200);
+
+    expect(verifyWindow.mock.calls.at(-1)[1].horizontalAccuracy).toBe(-1);
+  });
 });

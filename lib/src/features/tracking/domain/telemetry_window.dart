@@ -31,7 +31,7 @@ class TelemetryWindow {
 /// Nguồn dữ liệu cho màn hình chạy.
 ///
 /// - Bản giả lập ([SimulatedTelemetrySource]) dùng khi dev trên Chrome và cho Demo Simulator.
-/// - Bản thật (DEV 1, Module 3) đọc GPS + gia tốc kế 50 Hz, gom 256 mẫu bằng `AccelBuffer`
+/// - Bản thật (`DeviceTelemetrySource`) đọc GPS + gia tốc kế 50 Hz, gom 256 mẫu
 ///   rồi phát một [TelemetryWindow] và xoá đệm (các cửa sổ không chồng nhau).
 abstract class TelemetryWindowSource {
   /// Tốc độ tức thời (m/s) để hiện HUD liên tục, khoảng 1 giá trị mỗi giây.

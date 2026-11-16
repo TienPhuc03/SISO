@@ -14,7 +14,10 @@ final replayLogLoaderProvider = Provider((ref) => loadReplayLogAsset);
 
 const replaySpeedFactors = [1.0, 4.0, 10.0];
 
-/// Chọn nguồn dữ liệu cho màn Chạy: giả lập hoặc phát lại log GPS/IMU thật (issue #8).
+enum _SourceMode { device, simulated, replay }
+
+/// Chọn nguồn dữ liệu cho màn Chạy: cảm biến thật, giả lập, hoặc phát lại log GPS/IMU thật (issue #8).
+/// Chỉ hiện khi debug hoặc bản demo (`allowFakeSourcesProvider`).
 class TelemetrySourcePicker extends ConsumerStatefulWidget {
   const TelemetrySourcePicker({super.key, this.enabled = true});
 
@@ -26,14 +29,18 @@ class TelemetrySourcePicker extends ConsumerStatefulWidget {
 }
 
 class _TelemetrySourcePickerState extends ConsumerState<TelemetrySourcePicker> {
-  bool _replayMode = false;
+  late _SourceMode _mode;
   String? _loadingPath;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _replayMode = ref.read(telemetrySourceChoiceProvider) is ReplaySourceChoice;
+    _mode = switch (ref.read(telemetrySourceChoiceProvider)) {
+      DeviceSourceChoice() => _SourceMode.device,
+      SimulatedSourceChoice() => _SourceMode.simulated,
+      ReplaySourceChoice() => _SourceMode.replay,
+    };
   }
 
   Future<void> _selectLog(String assetPath, double speed) async {
@@ -73,23 +80,27 @@ class _TelemetrySourcePickerState extends ConsumerState<TelemetrySourcePicker> {
           children: [
             Text('Nguồn dữ liệu', style: textTheme.titleSmall),
             const SizedBox(height: 8),
-            SegmentedButton<bool>(
+            SegmentedButton<_SourceMode>(
               segments: const [
-                ButtonSegment(value: false, label: Text('Giả lập')),
-                ButtonSegment(value: true, label: Text('Phát lại log')),
+                ButtonSegment(value: _SourceMode.device, label: Text('Cảm biến')),
+                ButtonSegment(value: _SourceMode.simulated, label: Text('Giả lập')),
+                ButtonSegment(value: _SourceMode.replay, label: Text('Phát lại log')),
               ],
-              selected: {_replayMode},
+              selected: {_mode},
               onSelectionChanged: widget.enabled
                   ? (s) {
-                      setState(() => _replayMode = s.first);
-                      if (!s.first) {
-                        ref.read(telemetrySourceChoiceProvider.notifier).state =
-                            const SimulatedSourceChoice();
-                      }
+                      setState(() => _mode = s.first);
+                      // Phát lại log: giữ nguồn hiện tại cho tới khi chọn được một log.
+                      final choice = switch (s.first) {
+                        _SourceMode.device => const DeviceSourceChoice(),
+                        _SourceMode.simulated => const SimulatedSourceChoice(),
+                        _SourceMode.replay => null,
+                      };
+                      if (choice != null) ref.read(telemetrySourceChoiceProvider.notifier).state = choice;
                     }
                   : null,
             ),
-            if (_replayMode) ...[
+            if (_mode == _SourceMode.replay) ...[
               const SizedBox(height: 8),
               _buildLogList(choice, textTheme),
               if (choice is ReplaySourceChoice) ...[

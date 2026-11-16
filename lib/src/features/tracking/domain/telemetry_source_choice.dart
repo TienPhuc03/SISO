@@ -5,7 +5,12 @@ sealed class TelemetrySourceChoice {
   const TelemetrySourceChoice();
 }
 
-/// Nguồn giả lập tổng hợp (mặc định).
+/// Cảm biến thật của máy (mặc định, và là nguồn duy nhất trong bản phát hành).
+class DeviceSourceChoice extends TelemetrySourceChoice {
+  const DeviceSourceChoice();
+}
+
+/// Nguồn giả lập tổng hợp (chỉ khi debug hoặc demo).
 class SimulatedSourceChoice extends TelemetrySourceChoice {
   const SimulatedSourceChoice();
 }

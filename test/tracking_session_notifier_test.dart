@@ -41,8 +41,23 @@ class FakeRepository extends TelemetryRepository {
     sentSessionIds.add(sessionId);
     sentKeys.add(signingKey);
     sentSeqs.add(seq);
+    calls.add('verify');
     final next = responses.removeAt(0);
     if (next is VerifyWindowResult) return next;
+    throw next;
+  }
+
+  /// Thứ tự gọi API ('verify' / 'finish:<sessionId>').
+  final calls = <String>[];
+
+  /// Kết quả của `finish`: số km, hoặc lỗi để ném.
+  Object finishResponse = 1.5;
+
+  @override
+  Future<double> finishSession(String sessionId) async {
+    calls.add('finish:$sessionId');
+    final next = finishResponse;
+    if (next is double) return next;
     throw next;
   }
 }
@@ -93,7 +108,7 @@ void main() {
     notifier.startRun();
     await sendWindow();
     await sendWindow();
-    notifier.stopRun();
+    await notifier.stopRun();
 
     notifier.startRun();
     await sendWindow();
@@ -184,6 +199,29 @@ void main() {
     expect(notifier.state.errorCode, 'HTTP_401');
   });
 
+  test('ERR_204 (Phiên đã kết thúc trên server) chỉ dừng chạy, không phải bị loại', () async {
+    repo.responses.add(const SisoException(code: 'ERR_204', message: 'SESSION_NOT_FOUND'));
+    notifier.startRun();
+
+    await sendWindow();
+
+    expect(notifier.state.status, TrackingStatus.idle);
+    expect(notifier.state.errorCode, 'ERR_204');
+  });
+
+  test('nguồn báo lỗi (chưa cấp quyền vị trí): dừng chạy, hiện lỗi, không bị loại', () async {
+    notifier.startRun();
+
+    source.win.addError(const SisoException(code: 'ERR_LOCATION', message: 'Chưa cấp quyền vị trí.'));
+    await Future<void>.delayed(Duration.zero);
+    await notifier.flush();
+
+    expect(notifier.state.status, TrackingStatus.idle);
+    expect(notifier.state.errorCode, 'ERR_LOCATION');
+    expect(notifier.state.errorMessage, 'Chưa cấp quyền vị trí.');
+    expect(source.stops, greaterThanOrEqualTo(1));
+  });
+
   test('lỗi mạng: bỏ cửa sổ đó, báo mất kết nối, vẫn tiếp tục chạy', () async {
     repo.responses.addAll([
       DioException(requestOptions: RequestOptions(path: '/api/v1/telemetry/verify')),
@@ -199,11 +237,65 @@ void main() {
     expect(notifier.state.connectionIssue, isFalse);
   });
 
-  test('dừng chạy: tắt nguồn dữ liệu và về idle', () {
+  test('server trả ERR_203 (mất tín hiệu vệ tinh): báo đang tìm tín hiệu, Phiên chạy tiếp tục', () async {
+    repo.responses.addAll([
+      const SisoException(code: 'ERR_203', message: 'GPS_ACCURACY_LOW'),
+      _ok(),
+    ]);
     notifier.startRun();
-    notifier.stopRun();
+
+    await sendWindow();
+    expect(notifier.state.status, TrackingStatus.tracking);
+    expect(notifier.state.gpsSearching, isTrue);
+    expect(source.stops, 0);
+
+    await sendWindow();
+    expect(notifier.state.gpsSearching, isFalse);
+  });
+
+  test('dừng chạy khi chưa có Phiên chạy: tắt nguồn dữ liệu, về idle, không gọi finish', () async {
+    notifier.startRun();
+    await notifier.stopRun();
 
     expect(notifier.state.status, TrackingStatus.idle);
     expect(source.stops, greaterThanOrEqualTo(1));
+    expect(repo.calls, isEmpty);
+  });
+
+  test('dừng chạy: chờ cửa sổ đang gửi xong rồi mới finish, hiện km đã cộng', () async {
+    repo.responses.add(_ok(key: 'k1'));
+    notifier.startRun();
+    source.win.add(_window);
+    await Future<void>.delayed(Duration.zero);
+
+    await notifier.stopRun();
+
+    expect(repo.calls, ['verify', 'finish:sess-1']);
+    expect(notifier.state.status, TrackingStatus.idle);
+    expect(notifier.state.addedKm, 1.5);
+  });
+
+  test('dừng chạy sau khi bị loại: không gọi finish', () async {
+    repo.responses.add(const SisoException(code: 'ERR_202', message: 'x'));
+    notifier.startRun();
+    await sendWindow();
+
+    await notifier.stopRun();
+
+    expect(repo.calls, ['verify']);
+    expect(notifier.state.status, TrackingStatus.rejected);
+  });
+
+  test('finish lỗi mạng: về idle và báo km lần này chưa được cộng', () async {
+    repo.responses.add(_ok(key: 'k1'));
+    repo.finishResponse = DioException(requestOptions: RequestOptions(path: '/api/v1/telemetry/finish'));
+    notifier.startRun();
+    await sendWindow();
+
+    await notifier.stopRun();
+
+    expect(notifier.state.status, TrackingStatus.idle);
+    expect(notifier.state.errorCode, 'ERR_NETWORK');
+    expect(notifier.state.addedKm, isNull);
   });
 }

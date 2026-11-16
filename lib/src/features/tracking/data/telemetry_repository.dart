@@ -34,6 +34,18 @@ class TelemetryRepository {
       rethrow;
     }
   }
+
+  /// Kết thúc Phiên chạy không khép vòng; trả số km server vừa cộng. Lỗi ném như [verifyWindow].
+  Future<double> finishSession(String sessionId) async {
+    try {
+      final response = await ApiClient.dio.post('/api/v1/telemetry/finish', data: {'sessionId': sessionId});
+      return ((response.data as Map)['data']['addedKm'] as num).toDouble();
+    } on DioException catch (e) {
+      final error = parseErrorBody(e.response?.data);
+      if (error != null) throw error;
+      rethrow;
+    }
+  }
 }
 
 /// HMAC-SHA256 (hex) của body. Phải khớp `signBody` ở `backend/.../telemetry-signature.ts`.
