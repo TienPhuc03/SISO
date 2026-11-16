@@ -37,7 +37,9 @@ export class TurfGateway implements OnGatewayConnection, OnGatewayDisconnect {
     universityCode: string;
     hexColor: string;
     claimedHexes: string[];
-    claimedBy: string;
+    arenaId: string | null;
+    /** ISO 8601. */
+    claimedAt: string;
   }) {
     this.logger.log(
       `[Broadcast] Trường ${payload.universityCode} đã chiếm ${payload.claimedHexes.length} ô lục giác!`,

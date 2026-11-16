@@ -454,7 +454,7 @@ Tất cả endpoint có tiền tố `/api/v1`, dữ liệu trao đổi bằng JS
 | `POST` | `/api/v1/auth/verify-otp` | Public | Body: `{ email: string, otp: string }`. Kiểm tra OTP, trả về `accessToken` JWT. |
 | `POST` | `/api/v1/telemetry/verify` | Bearer JWT | Body: `{ averageSpeedMps, horizontalAccuracy, isMocked, imuSamples: [{ax, ay, az, timestamp}] }`. Chạy bộ lọc Anti-GIGO. |
 | `GET` | `/api/v1/turf/hexagons` | Public | Query: `?arenaId=uuid`. Lấy danh sách trạng thái ô lục giác H3 trên bản đồ. |
-| `POST` | `/api/v1/turf/claim-loop` | Bearer JWT | Body: `{ boundaryH3Indexes: string[], distanceMeters, durationSeconds, arenaId }`. Chiếm đất khép vòng. |
+| `POST` | `/api/v1/turf/claim-loop` | Bearer JWT | Body: `{ boundaryH3Indexes: string[], sessionId, arenaId }`. Chiếm đất khép vòng. |
 | `GET` | `/api/v1/leaderboard/scores` | Public | Lấy bảng xếp hạng % Đất + % Km + Điểm Tổng lực Mùa giải. |
 | `GET` | `/api/v1/leaderboard/hall-of-fame` | Public | Lấy danh sách vinh danh các trường Quán quân mùa giải cũ. |
 
@@ -469,7 +469,8 @@ Tất cả endpoint có tiền tố `/api/v1`, dữ liệu trao đổi bằng JS
       "universityCode": "HUTECH",
       "hexColor": "#FFCC00",
       "claimedHexes": ["8a31e8464627fff", "8a31e846460ffff"],
-      "claimedBy": "Nguyễn Văn A"
+      "arenaId": "11111111-1111-4111-8111-111111111111",
+      "claimedAt": "2026-11-04T10:00:00.000Z"
     }
     ```
 
@@ -482,6 +483,7 @@ Tất cả endpoint có tiền tố `/api/v1`, dữ liệu trao đổi bằng JS
 | `ERR_201` | `MOCK_GPS_DETECTED` | Phát hiện phần mềm giả lập tọa độ | Hủy phiên chạy, ghi nhận cờ nghi vấn. |
 | `ERR_202` | `VEHICLE_SPEED_MISMATCH` | Tốc độ cao nhưng nhịp bước chân không khớp (Xe máy) | Hủy phiên chạy, cảnh báo yêu cầu chạy bộ thật. |
 | `ERR_203` | `GPS_ACCURACY_LOW` | Sai số vệ tinh $> 20\text{m}$ (trong nhà / hầm xe) | Tạm dừng đo, hiển thị "Đang tìm tín hiệu vệ tinh...". |
+| `ERR_205` | `INVALID_SIGNATURE` | Cửa sổ cảm biến sai chữ ký HMAC-SHA256 hoặc gửi lại cửa sổ cũ | Hủy phiên chạy, ghi nhật ký GIGO. |
 | `ERR_301` | `LOOP_TOO_LARGE` | Diện tích vòng khép vượt giới hạn an toàn 150 ô H3 | Từ chối chiếm đất, yêu cầu khép vòng trong phạm vi nhỏ hơn. |
 | `ERR_302` | `SELF_INTERSECT` | Đường chạy tự cắt chéo hình số 8 không tạo chu trình đơn | Bỏ qua điểm cắt, tiếp tục ghi nhận vệt chạy. |
 

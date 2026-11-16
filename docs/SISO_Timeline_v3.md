@@ -143,8 +143,8 @@
 #### Ngày 10 – Ngày 12: [Module 4 - Dev 2] Tầng 2 Biometric Gate (DSP & FFT Chống Xe Máy)
 * **Dev 2 (Phụ trách Module 4):**
   * `[Code]`: 
-    * Frontend: Đọc gia tốc $50\text{Hz}$ đóng gói vào Sliding Window 250 mẫu (`Float32List`). Viết màn hình `ActiveRunScreen` và widget `SpeedCadenceHud` hiển thị tốc độ km/h và nhịp bước chân SPM thời gian thực.
-    * Backend: Xây dựng `AntiGigoService` thực hiện biến đổi Fourier (FFT) trên mảng gia tốc, tìm Peak Frequency. Thuật toán từ chối xe máy: Vận tốc $\ge 2.5\text{ m/s}$ nhưng nhịp bước $< 120\text{ SPM}$ hoặc biên độ đứng $< 0.2G \rightarrow$ Ném mã lỗi `ERR_202`.
+    * Frontend: Đọc gia tốc $50\text{Hz}$ đóng gói vào Sliding Window 256 mẫu (5,12 s, `Float32List`). Viết màn hình `ActiveRunScreen` và widget `SpeedCadenceHud` hiển thị tốc độ km/h và nhịp bước chân SPM thời gian thực.
+    * Backend: Xây dựng `AntiGigoService` thực hiện biến đổi Fourier (FFT) trên mảng gia tốc, tìm Peak Frequency. Thuật toán từ chối xe máy: Vận tốc $\ge 2.5\text{ m/s}$ nhưng nhịp bước $< 120\text{ SPM}$ hoặc biên độ đứng $< 0.2G$ hoặc phổ không có đỉnh nhịp bước rõ. Một cửa sổ không đạt chỉ cảnh báo; **2 cửa sổ liên tiếp** không đạt $\rightarrow$ Ném mã lỗi `ERR_202` và loại Phiên chạy.
   * `[Docs]`: 
     * Soạn **Chương III: 3.3.4 Đặc tả Use Case UC-04 (Kiểm định Anti-GIGO FFT chống xe máy)**.
     * Soạn **Chương IV: 4.4.2 Phân hệ Thu thập Telemetry & Anti-GIGO (Kalman + FFT) (Phần 2 - Thuật toán Biometric FFT): Công thức toán học $A_{\text{mag}}$, Zero-Crossing Rate, Lược đồ Lớp (Class Diagram), và cập nhật Sequence Diagram mục 4.4.2 (bổ sung luồng FFT và mã lỗi `ERR_202`)**.

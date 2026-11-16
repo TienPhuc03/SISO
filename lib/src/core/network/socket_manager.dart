@@ -1,16 +1,16 @@
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../constants/app_constants.dart';
 
 /// Singleton quản lý kết nối WebSocket Realtime tới NestJS TurfGateway
 class SocketManager {
   SocketManager._();
 
-  static IO.Socket? _socket;
+  static io.Socket? _socket;
 
   static void initialize() {
-    _socket = IO.io(
+    _socket = io.io(
       AppConstants.socketUrl,
-      IO.OptionBuilder()
+      io.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
           .build(),
@@ -29,6 +29,11 @@ class SocketManager {
 
   static void onHexClaimed(Function(dynamic) callback) {
     _socket?.on('hex_claimed', callback);
+  }
+
+  /// Gỡ đúng [callback] đã đăng ký bằng [onHexClaimed]; các listener khác giữ nguyên.
+  static void offHexClaimed(Function(dynamic) callback) {
+    _socket?.off('hex_claimed', callback);
   }
 
   static void disconnect() {

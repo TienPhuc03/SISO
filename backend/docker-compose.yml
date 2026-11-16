@@ -12,6 +12,7 @@ services:
     volumes:
       - siso_pgdata:/var/lib/postgresql/data
       - ./src/database/init_schema.sql:/docker-entrypoint-initdb.d/init_schema.sql
+      - ./src/database/season_automation.sql:/docker-entrypoint-initdb.d/season_automation.sql
     networks:
       - siso-network
 

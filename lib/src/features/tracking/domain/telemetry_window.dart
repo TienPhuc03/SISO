@@ -18,8 +18,9 @@ class TelemetryWindow {
   final double horizontalAccuracy;
   final bool isMocked;
 
-  Map<String, dynamic> toJson({String? sessionId}) => {
+  Map<String, dynamic> toJson({String? sessionId, int? seq}) => {
         if (sessionId != null) 'sessionId': sessionId,
+        if (seq != null) 'seq': seq,
         'averageSpeedMps': averageSpeedMps,
         'horizontalAccuracy': horizontalAccuracy,
         'isMocked': isMocked,
@@ -30,7 +31,7 @@ class TelemetryWindow {
 /// Nguồn dữ liệu cho màn hình chạy.
 ///
 /// - Bản giả lập ([SimulatedTelemetrySource]) dùng khi dev trên Chrome và cho Demo Simulator.
-/// - Bản thật (DEV 1, Module 3) đọc GPS + gia tốc kế 50 Hz, gom 256 mẫu bằng `AccelBuffer`
+/// - Bản thật (`DeviceTelemetrySource`) đọc GPS + gia tốc kế 50 Hz, gom 256 mẫu
 ///   rồi phát một [TelemetryWindow] và xoá đệm (các cửa sổ không chồng nhau).
 abstract class TelemetryWindowSource {
   /// Tốc độ tức thời (m/s) để hiện HUD liên tục, khoảng 1 giá trị mỗi giây.
@@ -52,9 +53,13 @@ class VerifyWindowResult {
     required this.biometricApplied,
     required this.cadenceSpm,
     required this.message,
+    this.signingKey,
   });
 
   final String sessionId;
+
+  /// Khoá HMAC của Phiên chạy; server chỉ trả ở cửa sổ đầu tiên.
+  final String? signingKey;
   final bool windowPassed;
   final int consecutiveFailures;
   final bool biometricApplied;

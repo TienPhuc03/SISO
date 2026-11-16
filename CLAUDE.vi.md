@@ -13,6 +13,7 @@ Backend (chạy trong `backend/`):
 - `npm test`; chạy một file: `npx jest anti-gigo.service.spec`; chạy một test: `npx jest -t "<tên test>"` (`rootDir` của jest là `src`, khớp với `*.spec.ts`)
 - `docker-compose up -d` chạy Postgres/PostGIS + Redis + API ở local (nạp `src/database/init_schema.sql` khi khởi tạo)
 - `npm run seed:hexagons` in số ô H3 res 10 của từng Đấu trường từ `src/database/arenas.geojson` (dry-run); thêm `-- --apply` để upsert Đấu trường và nạp `h3_hexagons` vào DB trong `backend/.env` (chạy lại an toàn, giữ chủ ô/HP)
+- `src/database/season_automation.sql` chứa các job `pg_cron` (đóng Mùa giải, Hao mòn 24h/48h) trong schema `private` không lộ ra ngoài; chạy riêng trong Supabase SQL Editor (chạy lại an toàn), không chạy qua `init_schema.sql`
 
 Client (thư mục gốc repo):
 - `flutter pub get`, `flutter run -d chrome` (hoặc chạy trên thiết bị), `flutter test`, `flutter test test/gigo_filter_test.dart`, `flutter analyze`

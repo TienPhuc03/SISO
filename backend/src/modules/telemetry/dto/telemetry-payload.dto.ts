@@ -7,6 +7,7 @@ import {
   ArrayMaxSize,
   IsOptional,
   IsUUID,
+  IsInt,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -42,14 +43,25 @@ export class TelemetryPayloadDto {
   @IsUUID()
   sessionId?: string;
 
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Số thứ tự cửa sổ đã ký, tăng dần trong một Phiên chạy (chống gửi lại). Bắt buộc khi có sessionId.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  seq?: number;
+
   @ApiProperty({ example: 3.2, description: 'Vận tốc trung bình trong cửa sổ (m/s), từ GPS' })
   @IsNumber()
   @Min(0)
   averageSpeedMps: number;
 
-  @ApiProperty({ example: 8.5, description: 'Sai số vệ tinh GPS (m)' })
+  @ApiProperty({
+    example: 8.5,
+    description: 'Sai số vệ tinh GPS (m). Giá trị âm (iOS trả -1 khi chưa có tín hiệu) bị trả ERR_203.',
+  })
   @IsNumber()
-  @Min(0)
   horizontalAccuracy: number;
 
   @ApiProperty({ example: false, description: 'Cờ phát hiện Fake GPS từ hệ điều hành' })

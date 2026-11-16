@@ -12,6 +12,10 @@ class HexagonLayer extends ConsumerWidget {
   static const double ownedAlpha = 0.45;
   static const double neutralAlpha = 0.35;
 
+  /// Ô có chủ mờ dần theo Độ bền: Hao mòn còn 50 thì độ đậm còn một nửa (SRS mục 20).
+  static double fillAlpha(HexCell cell) =>
+      cell.isNeutral ? neutralAlpha : ownedAlpha * cell.shieldHp.clamp(0, 100) / 100;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cells = ref.watch(mapStateNotifierProvider);
@@ -34,9 +38,7 @@ class HexagonLayer extends ConsumerWidget {
 
   Polygon _toPolygon(HexCell cell) => Polygon(
         points: cell.boundary,
-        color: cell.isNeutral
-            ? Colors.white.withValues(alpha: neutralAlpha)
-            : cell.color.withValues(alpha: ownedAlpha),
+        color: (cell.isNeutral ? Colors.white : cell.color).withValues(alpha: fillAlpha(cell)),
         borderColor: Colors.black26,
         borderStrokeWidth: 1,
       );

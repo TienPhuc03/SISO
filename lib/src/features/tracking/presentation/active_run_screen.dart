@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/siso_exceptions.dart';
 import '../../../core/network/api_client.dart';
 import '../data/simulated_telemetry_source.dart';
 import '../providers/tracking_session_notifier.dart';
 import 'speed_cadence_hud.dart';
+import 'telemetry_source_picker.dart';
 
 /// Màn hình Phiên chạy đang diễn ra: HUD, cảnh báo vàng khi một cửa sổ nghi xe máy,
 /// và màn hình đỏ khi Phiên chạy bị loại (bằng chứng "còi đỏ" cho buổi test thực địa).
@@ -18,6 +20,7 @@ class ActiveRunScreen extends ConsumerWidget {
     final run = ref.watch(trackingSessionNotifierProvider);
     final notifier = ref.read(trackingSessionNotifierProvider.notifier);
     final source = ref.watch(telemetryWindowSourceProvider);
+    final allowFakeSources = ref.watch(allowFakeSourcesProvider);
 
     ref.listen(trackingSessionNotifierProvider, (previous, next) {
       if (previous?.status != TrackingStatus.rejected && next.status == TrackingStatus.rejected) {
@@ -46,11 +49,23 @@ class ActiveRunScreen extends ConsumerWidget {
                   icon: Icons.wifi_off,
                   text: 'Mất kết nối, cửa sổ vừa rồi chưa được kiểm định.',
                 ),
+              if (run.gpsSearching && run.status == TrackingStatus.tracking)
+                const _Banner(
+                  color: Color(0xFF90A4AE),
+                  icon: Icons.satellite_alt,
+                  text: 'Đang tìm tín hiệu vệ tinh... Quãng đường lúc này chưa được tính.',
+                ),
+              if (run.status == TrackingStatus.idle && run.addedKm != null)
+                _Banner(
+                  color: const Color(0xFFA5D6A7),
+                  icon: Icons.check_circle_outline,
+                  text: 'Đã kết thúc Phiên chạy, cộng ${run.addedKm!.toStringAsFixed(2)} km cho bạn và trường.',
+                ),
               if (run.status == TrackingStatus.idle && run.errorCode != null)
                 _Banner(
                   color: const Color(0xFFEF9A9A),
                   icon: Icons.error_outline,
-                  text: '[${run.errorCode}] ${run.errorMessage}',
+                  text: '[${run.errorCode}] ${runErrorText(run.errorCode!, run.errorMessage ?? '')}',
                 ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -71,7 +86,8 @@ class ActiveRunScreen extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text('Phiên chạy: ${run.sessionId}', style: Theme.of(context).textTheme.bodySmall),
                 ),
-              if (source is SimulatedTelemetrySource) _SimulatorPanel(source: source),
+              if (allowFakeSources) TelemetrySourcePicker(enabled: run.status != TrackingStatus.tracking),
+              if (allowFakeSources && source is SimulatedTelemetrySource) _SimulatorPanel(source: source),
             ],
           ),
           if (run.status == TrackingStatus.rejected)
@@ -81,6 +97,18 @@ class ActiveRunScreen extends ConsumerWidget {
     );
   }
 }
+
+/// Lời giải thích tiếng Việt cho lỗi làm dừng Phiên chạy (không phải bị loại).
+/// Thông báo gốc của server (thường là tiếng Anh, do kiểm tra DTO) chỉ giữ lại cho mã lạ.
+String runErrorText(String code, String message) => switch (code) {
+      'HTTP_400' => 'Dữ liệu cảm biến gửi lên không đúng định dạng nên Phiên chạy đã dừng. '
+          'Đây không phải gian lận; hãy chạy lại, nếu lặp lại thì báo nhóm phát triển.',
+      'HTTP_401' => 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại rồi chạy tiếp.',
+      SisoErrorCodes.sessionNotFound => 'Phiên chạy đã kết thúc hoặc không còn trên máy chủ. Bấm "Bắt đầu chạy" để mở Phiên mới.',
+      SisoErrorCodes.network when message.isEmpty => 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.',
+      _ when code.startsWith('HTTP_5') => 'Máy chủ đang gặp sự cố. Thử lại sau ít phút.',
+      _ => message,
+    };
 
 class _Banner extends StatelessWidget {
   const _Banner({required this.color, required this.icon, required this.text});

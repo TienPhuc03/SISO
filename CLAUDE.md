@@ -15,6 +15,7 @@ Backend (run in `backend/`):
 - `npm test`; single file: `npx jest anti-gigo.service.spec`; single test: `npx jest -t "<test name>"` (jest `rootDir` is `src`, matches `*.spec.ts`)
 - `docker-compose up -d` runs Postgres/PostGIS + Redis + API locally (loads `src/database/init_schema.sql` on init)
 - `npm run seed:hexagons` prints the H3 res 10 cells per arena from `src/database/arenas.geojson` (dry-run); add `-- --apply` to upsert arenas and insert `h3_hexagons` into the DB in `backend/.env` (idempotent, keeps owners/HP)
+- `src/database/season_automation.sql` holds the `pg_cron` jobs (season close, 24h/48h decay) in the unexposed `private` schema; run it alone in the Supabase SQL Editor (idempotent), not via `init_schema.sql`
 
 Client (repo root):
 - `flutter pub get`, `flutter run -d chrome` (or a device), `flutter test`, `flutter test test/gigo_filter_test.dart`, `flutter analyze`

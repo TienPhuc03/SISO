@@ -47,6 +47,10 @@ export class RunningSession {
   @Column({ type: 'int', default: 0 })
   consecutive_biometric_failures: number;
 
+  /** Số thứ tự lớn nhất đã nhận; cửa sổ có seq không lớn hơn là gửi lại (ERR_205). */
+  @Column({ type: 'int', default: 0 })
+  last_window_seq: number;
+
   @CreateDateColumn()
   created_at: Date;
 

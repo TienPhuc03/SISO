@@ -121,22 +121,23 @@ Giữ app đang mở, làm trên Swagger (`http://localhost:3000/docs`):
 
 1. `POST /api/v1/auth/edu-login` với `{ "email": "<tên>@uef.edu.vn" }`.
 2. `POST /api/v1/auth/verify-otp` với email đó và `"otp": "123456"`, rồi copy `accessToken` vào nút **Authorize**.
-3. `POST /api/v1/turf/claim-loop` với:
+3. Tạo phiên chạy ACTIVE cho tài khoản đó bằng SQL ở TC-UI-05 trong [test_plan_module2_map.md](test_plan_module2_map.md) (đổi email cho khớp), ghi lại id làm `<SESSION_ID>`.
+4. `POST /api/v1/turf/claim-loop` với:
    ```json
    {
-     "boundaryH3Indexes": ["8a65b5671897fff", "8a65b5671887fff", "8a65b56718a7fff"],
-     "distanceMeters": 500,
-     "durationSeconds": 180
+     "boundaryH3Indexes": ["8a65b5671897fff", "8a65b56718a7fff", "8a65b5671887fff"],
+     "sessionId": "<SESSION_ID>"
    }
    ```
 
 Mong đợi: 3 ô trung lập đó **đổi sang màu đỏ UEF ngay** trên app mà không cần tải lại.
 
 Cần biết khi kiểm bước này:
-- Backend hiện vẫn gửi `claimedBy` trong `hex_claimed`. Hợp đồng #3 đã quyết bỏ nhưng chưa sửa backend. Client bỏ qua trường đó.
-- `claim-loop` hiện **chưa** đòi `sessionId` như hợp đồng #3, nên gọi thẳng được.
-- `H3Service` đang đảo trục lat/lng (đã ghi trên bản đồ wayfinder), nên ô "bên trong" vòng có thể bị tính sai. Ô nào không có trên bản đồ thì client bỏ qua, đúng thiết kế. Bạn chỉ cần xác nhận 3 ô biên đổi màu.
-- Bước này ghi thêm km vào trường UEF và tài khoản thử. Nếu cần sạch dữ liệu thì xoá dòng trong `running_sessions` và trừ lại km.
+- `hex_claimed` không còn gửi `claimedBy` (đã bỏ khỏi backend theo hợp đồng #3).
+- `claim-loop` **bắt buộc** có `sessionId` của một phiên chạy ACTIVE; km cộng theo quãng đường của phiên, không nhận từ body.
+- Thứ tự ô biên phải theo đường chạy và ô cuối phải liền kề ô đầu. Thứ tự cũ `["8a65b5671897fff", "8a65b5671887fff", "8a65b56718a7fff"]` giờ bị `ERR_302` (vòng chưa khép).
+- Sau C1, ô bên trong vòng được tính đúng. Vòng 3 ô này không có ô bên trong nên chỉ 3 ô biên đổi màu.
+- Bước này ghi thêm km vào trường UEF và tài khoản thử, phiên chạy chuyển sang `COMPLETED`. Nếu cần sạch dữ liệu thì xoá dòng trong `running_sessions` và trừ lại km.
 
 ## 5. Checklist để bạn duyệt
 

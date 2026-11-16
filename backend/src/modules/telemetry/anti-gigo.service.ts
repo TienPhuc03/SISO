@@ -24,11 +24,12 @@ export class AntiGigoService {
       };
     }
 
-    if (accuracy > 20.0) {
+    // iOS trả accuracy = -1 khi chưa có tín hiệu vệ tinh: coi như sai số quá lớn.
+    if (accuracy < 0 || accuracy > 20.0) {
       return {
         isValid: false,
         errorCode: 'ERR_203',
-        message: 'GPS_ACCURACY_LOW: Độ sai số vệ tinh quá lớn (> 20m).',
+        message: 'GPS_ACCURACY_LOW: Chưa có tín hiệu vệ tinh hoặc sai số quá lớn (> 20m).',
       };
     }
 
