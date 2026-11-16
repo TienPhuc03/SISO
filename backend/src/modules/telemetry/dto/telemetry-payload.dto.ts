@@ -57,9 +57,11 @@ export class TelemetryPayloadDto {
   @Min(0)
   averageSpeedMps: number;
 
-  @ApiProperty({ example: 8.5, description: 'Sai số vệ tinh GPS (m)' })
+  @ApiProperty({
+    example: 8.5,
+    description: 'Sai số vệ tinh GPS (m). Giá trị âm (iOS trả -1 khi chưa có tín hiệu) bị trả ERR_203.',
+  })
   @IsNumber()
-  @Min(0)
   horizontalAccuracy: number;
 
   @ApiProperty({ example: false, description: 'Cờ phát hiện Fake GPS từ hệ điều hành' })
