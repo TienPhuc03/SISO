@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS public.h3_hexagons (
 ALTER TABLE public.h3_hexagons ADD COLUMN IF NOT EXISTS last_captured_by UUID REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE public.h3_hexagons ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
-CREATE INDEX IF NOT EXISTS idx_h3_index_btree ON public.h3_hexagons USING BTREE (h3_index);
+-- h3_index đã là PRIMARY KEY nên Postgres tự có B-Tree index; không cần index riêng.
 CREATE INDEX IF NOT EXISTS idx_h3_owner ON public.h3_hexagons(owner_university_id);
 CREATE INDEX IF NOT EXISTS idx_h3_arena ON public.h3_hexagons(arena_id);
 
