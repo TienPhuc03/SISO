@@ -91,9 +91,9 @@ void main() {
     testWidgets('hiện các Trường đúng thứ tự server trả và số phần trăm', (tester) async {
       await pump(tester, FakeLeaderboardRepository(scores: [_score('UEF', 61.25), _score('HUTECH', 20)]));
 
-      expect(find.text('#1'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
       expect(find.text('UEF'), findsOneWidget);
-      expect(find.text('61.3%'), findsOneWidget);
+      expect(find.text('61,3%'), findsOneWidget);
       expect(tester.getTopLeft(find.text('UEF')).dy, lessThan(tester.getTopLeft(find.text('HUTECH')).dy));
     });
 

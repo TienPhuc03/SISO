@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/siso_theme.dart';
 import '../providers/auth_provider.dart';
 
-/// Nút Đăng xuất (đặt trên AppBar của MapScreen).
+/// Nút tròn Đăng xuất (đặt trên thanh nổi của MapScreen).
 class LogoutButton extends ConsumerWidget {
   const LogoutButton({super.key});
 
@@ -12,10 +13,12 @@ class LogoutButton extends ConsumerWidget {
     final session = ref.watch(authSessionProvider);
     final campus = session is AuthSignedIn ? session.user.university.shortCode : null;
 
-    return IconButton(
+    return SisoCircleButton(
       key: const Key('logout_button'),
+      size: 32,
+      background: SisoColors.bg,
       tooltip: campus == null ? 'Đăng xuất' : 'Đăng xuất ($campus)',
-      icon: const Icon(Icons.logout),
+      icon: Icons.logout,
       onPressed: () async {
         final confirmed = await showDialog<bool>(
           context: context,

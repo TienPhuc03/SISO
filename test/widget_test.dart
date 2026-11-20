@@ -17,7 +17,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('SISO - Xác thực Sinh viên'), findsOneWidget);
+    expect(find.text('Chạy cho trường của bạn'), findsOneWidget);
   });
 
   testWidgets('SisoApp đã đăng nhập: render MapScreen skeleton', (tester) async {
@@ -32,9 +32,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('SISO — Đại Chiến Bình Thạnh'), findsOneWidget);
+    expect(find.text('SISO'), findsOneWidget);
     expect(
-      find.text('BỘ ĐẾM SONG SONG: % ĐẤT CHIẾM ĐÓNG & % KM CỐNG HIẾN'),
+      find.text('Mùa giải hiện tại'),
       findsOneWidget,
     );
   });
