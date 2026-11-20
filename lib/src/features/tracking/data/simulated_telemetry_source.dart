@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:latlong2/latlong.dart';
+
+import '../../map/domain/play_area.dart';
 import '../domain/biometric_model.dart';
 import '../domain/telemetry_window.dart';
 
@@ -22,6 +25,7 @@ class SimulatedTelemetrySource implements TelemetryWindowSource {
   SimulatedTelemetrySource({
     this.gait = SimulatedGait.running,
     this.sampleRateHz = 50,
+    this.startAt = PlayArea.landmark81,
     Random? random,
   }) : _random = random ?? Random();
 
@@ -32,11 +36,21 @@ class SimulatedTelemetrySource implements TelemetryWindowSource {
   final int sampleRateHz;
   final Random _random;
 
+  /// Điểm xuất phát của vệt GPS giả; mỗi giây đi một đoạn theo tốc độ, hướng xoay dần thành vòng.
+  final LatLng startAt;
+
   final _speedController = StreamController<double>.broadcast();
   final _windowController = StreamController<TelemetryWindow>.broadcast();
+  final _positionController = StreamController<GpsFix>.broadcast();
   Timer? _speedTimer;
   Timer? _windowTimer;
   int _clockMs = 0;
+  int _fixClockMs = 0;
+  late LatLng _position = startAt;
+  double _headingRad = 0;
+
+  /// Điểm GPS giả chưa gửi kèm cửa sổ nào.
+  final _pendingFixes = <GpsFix>[];
 
   @override
   Stream<double> get speedMps => _speedController.stream;
@@ -45,11 +59,19 @@ class SimulatedTelemetrySource implements TelemetryWindowSource {
   Stream<TelemetryWindow> get windows => _windowController.stream;
 
   @override
+  Stream<GpsFix> get positions => _positionController.stream;
+
+  @override
   void start() {
     stop();
     _clockMs = DateTime.now().millisecondsSinceEpoch;
+    _fixClockMs = _clockMs;
+    _position = startAt;
+    _headingRad = 0;
+    _pendingFixes.clear();
     _speedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _speedController.add(_speedFor(gait) + (_random.nextDouble() - 0.5) * 0.2);
+      _positionController.add(nextFix());
     });
     final windowDuration = Duration(milliseconds: TelemetryWindow.size * 1000 ~/ sampleRateHz);
     _windowTimer = Timer.periodic(windowDuration, (_) => _windowController.add(buildWindow()));
@@ -61,6 +83,21 @@ class SimulatedTelemetrySource implements TelemetryWindowSource {
     _windowTimer?.cancel();
     _speedTimer = null;
     _windowTimer = null;
+  }
+
+  /// Đi tiếp 1 giây theo tốc độ của [gait]; hướng xoay 2°/giây nên vệt là một vòng bán kính ~90 m.
+  GpsFix nextFix() {
+    const metersPerDegLat = 111320.0;
+    final meters = _speedFor(gait);
+    _position = LatLng(
+      _position.latitude + meters * cos(_headingRad) / metersPerDegLat,
+      _position.longitude + meters * sin(_headingRad) / (metersPerDegLat * cos(_position.latitude * pi / 180)),
+    );
+    _headingRad += 2 * pi / 180;
+    _fixClockMs += 1000;
+    final fix = GpsFix(lat: _position.latitude, lng: _position.longitude, timestampMs: _fixClockMs, accuracy: 6);
+    _pendingFixes.add(fix);
+    return fix;
   }
 
   /// Một cửa sổ 256 mẫu theo [gait] hiện tại.
@@ -85,13 +122,17 @@ class SimulatedTelemetrySource implements TelemetryWindowSource {
         timestampMs: _clockMs + (i * 1000 ~/ sampleRateHz),
       );
     });
+    final windowStart = _clockMs;
     _clockMs += TelemetryWindow.size * 1000 ~/ sampleRateHz;
+    final gpsPoints = _pendingFixes.where((f) => f.timestampMs >= windowStart && f.timestampMs <= _clockMs).toList();
+    _pendingFixes.removeWhere((f) => f.timestampMs <= _clockMs);
 
     return TelemetryWindow(
       samples: samples,
       averageSpeedMps: _speedFor(gait),
       horizontalAccuracy: 6,
       isMocked: false,
+      gpsPoints: capGpsPoints(gpsPoints),
     );
   }
 
@@ -105,5 +146,6 @@ class SimulatedTelemetrySource implements TelemetryWindowSource {
     stop();
     _speedController.close();
     _windowController.close();
+    _positionController.close();
   }
 }
