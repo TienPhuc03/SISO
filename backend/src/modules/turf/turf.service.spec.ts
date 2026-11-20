@@ -7,12 +7,23 @@ import { University } from '../../entities/university.entity';
 import { User } from '../../entities/user.entity';
 import { RunningSession } from '../../entities/running-session.entity';
 import { Arena } from '../../entities/arena.entity';
+import { SessionWindow } from '../../entities/session-window.entity';
 import { H3Service } from './h3.service';
 import { TurfGateway } from '../realtime/turf.gateway';
 
 const ARENA_ID = '11111111-1111-4111-8111-111111111111';
 const HUTECH_ID = '22222222-2222-4222-8222-222222222222';
 const PATROLLED = new Date('2026-11-04T10:00:00.000Z');
+
+/** Cửa sổ có vệt GPS đi qua tâm từng ô [cells] (như Sinh viên chạy thật dọc biên). */
+const routeThrough = (cells: string[], accuracy = 5) => [
+  {
+    gps_points: cells.map((cell, i) => {
+      const [lat, lng] = h3.cellToLatLng(cell);
+      return { lat, lng, timestamp: i * 1000, accuracy };
+    }),
+  },
+];
 
 const ownedHex = {
   h3_index: '8a65b56718b7fff',
@@ -174,13 +185,14 @@ describe('TurfService: claimLoop', () => {
   const dto = { boundaryH3Indexes: [b, a], sessionId: SESSION_ID, arenaId: ARENA_ID };
   const activeSession = { id: SESSION_ID, user_id: USER_ID, status: 'ACTIVE', distance_meters: 1500 };
 
-  let tx: { findOne: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
+  let tx: { findOne: jest.Mock; find: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
   let gateway: { broadcastHexClaimed: jest.Mock };
   let service: TurfService;
 
   beforeEach(() => {
     tx = {
       findOne: jest.fn().mockResolvedValue(activeSession),
+      find: jest.fn().mockResolvedValue(routeThrough([a, b])),
       query: jest.fn(),
       increment: jest.fn(),
       update: jest.fn(),
@@ -228,6 +240,7 @@ describe('TurfService: claimLoop', () => {
       status: 'COMPLETED',
       session_type: 'ARENA_LOOP',
       hex_count: 3,
+      finished_at: expect.any(Date),
     });
     expect(res).toMatchObject({ claimedCount: 3, addedKm: 1.5 });
   });
@@ -274,6 +287,52 @@ describe('TurfService: claimLoop', () => {
     expect(gateway.broadcastHexClaimed.mock.calls[0][0].arenaId).toBeNull();
   });
 
+  describe('Đường biên phải khớp vệt GPS thật của Phiên chạy (ERR_305)', () => {
+    const far = h3.gridRingUnsafe(h3.latLngToCell(10.8016, 106.7146, 10), 4);
+    const expectNothingWritten = () => {
+      expect(tx.query).not.toHaveBeenCalled();
+      expect(tx.increment).not.toHaveBeenCalled();
+      expect(tx.update).not.toHaveBeenCalled();
+      expect(gateway.broadcastHexClaimed).not.toHaveBeenCalled();
+    };
+
+    it('đọc vệt của đúng Phiên chạy, trong transaction đã khoá', async () => {
+      await service.claimLoop(USER_ID, dto);
+
+      expect(tx.find).toHaveBeenCalledWith(SessionWindow, { where: { session_id: SESSION_ID } });
+    });
+
+    it('vệt đi qua ô kề bên (sai số GPS) vẫn tính là chạy qua biên', async () => {
+      const neighbourOf = (cell: string) => h3.gridRingUnsafe(cell, 1)[0];
+      tx.find.mockResolvedValue(routeThrough([neighbourOf(a), neighbourOf(b)]));
+
+      await expect(service.claimLoop(USER_ID, dto)).resolves.toMatchObject({ claimedCount: 3 });
+    });
+
+    it('biên có ô không nằm gần vệt (đi xe lúc Tạm dừng rồi gửi biên tự vẽ): ERR_305, không ghi gì', async () => {
+      tx.find.mockResolvedValue(routeThrough(far));
+
+      await expect(service.claimLoop(USER_ID, dto)).rejects.toMatchObject({
+        status: 400,
+        response: { code: 'ERR_305' },
+      });
+      expectNothingWritten();
+    });
+
+    it('Phiên chạy không có điểm GPS nào (client cũ): ERR_305', async () => {
+      tx.find.mockResolvedValue([{ gps_points: [] }]);
+
+      await expect(service.claimLoop(USER_ID, dto)).rejects.toMatchObject({ response: { code: 'ERR_305' } });
+      expectNothingWritten();
+    });
+
+    it('bỏ qua điểm sai số âm hoặc > 20 m khi đối chiếu', async () => {
+      tx.find.mockResolvedValue([...routeThrough([a, b], -1), ...routeThrough([a, b], 50)]);
+
+      await expect(service.claimLoop(USER_ID, dto)).rejects.toMatchObject({ response: { code: 'ERR_305' } });
+    });
+  });
+
   it('transaction lỗi thì ném lỗi và không broadcast', async () => {
     tx.increment.mockRejectedValue(new Error('db down'));
 
@@ -295,7 +354,7 @@ describe('TurfService: claimLoop với H3Service thật (không giả lập floo
     coordinates: [[[lng - 0.01, lat - 0.01], [lng + 0.01, lat - 0.01], [lng + 0.01, lat + 0.01], [lng - 0.01, lat + 0.01], [lng - 0.01, lat - 0.01]]],
   });
 
-  let tx: { findOne: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
+  let tx: { findOne: jest.Mock; find: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
   let gateway: { broadcastHexClaimed: jest.Mock };
   let arenaRepo: { findOne: jest.Mock };
   let service: TurfService;
@@ -304,6 +363,7 @@ describe('TurfService: claimLoop với H3Service thật (không giả lập floo
     arenaRepo = { findOne: jest.fn().mockResolvedValue({ id: ARENA_ID, boundary_polygon: square(10.8016, 106.7146) }) };
     tx = {
       findOne: jest.fn().mockResolvedValue({ id: SESSION_ID, user_id: USER_ID, status: 'ACTIVE', distance_meters: 1200 }),
+      find: jest.fn().mockResolvedValue(routeThrough(ring)),
       query: jest.fn(),
       increment: jest.fn(),
       update: jest.fn(),

@@ -6,12 +6,15 @@ plugins {
 
 android {
     namespace = "vn.edu.siso.siso_project"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_local_notifications 23 cần compileSdk ≥ 37 (chỉ là SDK để biên dịch, không đổi minSdk/targetSdk).
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications cần desugaring (java.time trên Android cũ).
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -46,4 +49,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

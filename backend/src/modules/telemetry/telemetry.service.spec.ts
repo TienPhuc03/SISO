@@ -6,6 +6,7 @@ import { TelemetryPayloadDto } from './dto/telemetry-payload.dto';
 import { SCENARIOS } from './synthetic-imu.fixture';
 import { RunningSession } from '../../entities/running-session.entity';
 import { GigoAuditLog } from '../../entities/gigo-audit-log.entity';
+import { SessionWindow } from '../../entities/session-window.entity';
 import { User } from '../../entities/user.entity';
 import { University } from '../../entities/university.entity';
 import { ConfigService } from '@nestjs/config';
@@ -48,9 +49,11 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
     create: jest.Mock;
     save: jest.Mock;
     findOne: jest.Mock;
-    manager: { transaction: jest.Mock };
+    find: jest.Mock;
+    manager: { transaction: jest.Mock; find: jest.Mock };
   };
   let audits: { create: jest.Mock; save: jest.Mock };
+  let windows: { insert: jest.Mock; query: jest.Mock };
   /** EntityManager giả trong transaction: verifyWindow dùng getRepository, finishSession dùng findOne/increment/update. */
   let tx: { getRepository: (entity: unknown) => unknown; findOne: jest.Mock; increment: jest.Mock; update: jest.Mock };
   let nextSeq: number;
@@ -72,12 +75,15 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
       create: jest.fn((x) => ({ ...x })),
       save: jest.fn(async (x) => ({ id: x.id ?? SESSION, ...x })),
       findOne: jest.fn(),
-      manager: { transaction: jest.fn() },
+      find: jest.fn(),
+      manager: { transaction: jest.fn(), find: jest.fn() },
     };
     audits = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    windows = { insert: jest.fn(), query: jest.fn().mockResolvedValue([]) };
     txOutcome = null;
     tx = {
-      getRepository: (entity: unknown) => (entity === RunningSession ? sessions : audits),
+      getRepository: (entity: unknown) =>
+        entity === RunningSession ? sessions : entity === SessionWindow ? windows : audits,
       findOne: jest.fn(),
       increment: jest.fn(),
       update: jest.fn(),
@@ -176,6 +182,8 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
 
     const saved = sessions.save.mock.calls.at(-1)[0];
     expect(saved).toMatchObject({ status: 'REJECTED', is_valid: false, rejection_reason: 'ERR_202' });
+    expect(saved.finished_at).toBeInstanceOf(Date);
+    expect(windows.insert).not.toHaveBeenCalled();
     expect(audits.save).toHaveBeenCalledWith(
       expect.objectContaining({
         user_id: USER,
@@ -234,6 +242,7 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
       });
 
       expect(sessions.save).not.toHaveBeenCalled();
+      expect(windows.insert).not.toHaveBeenCalled();
       expect(audits.save).not.toHaveBeenCalled();
     });
   });
@@ -264,6 +273,92 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
       response: { code: 'ERR_204' },
     });
   });
+  describe('Đường chạy: ghi từng cửa sổ vào session_windows', () => {
+    const samples = SCENARIOS.running();
+    const t0 = samples[0].timestamp;
+    const tEnd = samples.at(-1).timestamp;
+    const point = (timestamp: number) => ({ lat: 10.8, lng: 106.72, timestamp, accuracy: 5 });
+
+    it('cửa sổ đầu: tạo Phiên và ghi cửa sổ seq 0 trong cùng một transaction', async () => {
+      await verify(payload({ imuSamples: samples, gpsPoints: [point(t0), point(t0 + 1000)] }));
+
+      expect(sessions.manager.transaction).toHaveBeenCalledTimes(1);
+      expect(txOutcome).toBe('commit');
+      expect(windows.insert).toHaveBeenCalledWith({
+        session_id: SESSION,
+        seq: 0,
+        speed_mps: 3.2,
+        cadence_spm: expect.any(Number),
+        passed: true,
+        gps_points: [point(t0), point(t0 + 1000)],
+        recorded_at: new Date(t0),
+      });
+    });
+
+    it('cửa sổ sau: ghi đúng seq đã ký và vệt GPS', async () => {
+      sessions.findOne.mockResolvedValue(activeSession());
+      nextSeq = 4;
+
+      await verify(payload({ sessionId: SESSION, imuSamples: samples, gpsPoints: [point(tEnd)] }));
+
+      expect(windows.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ session_id: SESSION, seq: 4, gps_points: [point(tEnd)] }),
+      );
+    });
+
+    it('cửa sổ sau neo vào điểm GPS cuối đã lưu: điểm nhảy quá sức người không được lưu', async () => {
+      sessions.findOne.mockResolvedValue(activeSession());
+      windows.query.mockResolvedValue([{ point: point(t0 - 1000) }]);
+      const far = { ...point(t0), lat: 10.81 }; // ~1,1 km trong 1 s
+
+      await verify(payload({ sessionId: SESSION, imuSamples: samples, gpsPoints: [far, point(t0 + 1000)] }));
+
+      expect(windows.query).toHaveBeenCalledWith(expect.stringContaining('session_windows'), [SESSION]);
+      expect(windows.insert).toHaveBeenCalledWith(expect.objectContaining({ gps_points: [point(t0 + 1000)] }));
+    });
+
+    it('cửa sổ đầu không có điểm neo nên không tra DB', async () => {
+      await verify(payload({ imuSamples: samples, gpsPoints: [point(t0)] }));
+
+      expect(windows.query).not.toHaveBeenCalled();
+    });
+
+    it('cửa sổ chỉ bị cảnh báo ở Cổng Sinh trắc vẫn ghi, passed = false', async () => {
+      sessions.findOne.mockResolvedValue(activeSession());
+
+      await verify(payload({ sessionId: SESSION, imuSamples: SCENARIOS.motorbike() }));
+
+      expect(windows.insert).toHaveBeenCalledWith(expect.objectContaining({ passed: false }));
+    });
+
+    it('client cũ không gửi gpsPoints: ghi cửa sổ với vệt rỗng', async () => {
+      await verify(payload());
+
+      expect(windows.insert).toHaveBeenCalledWith(expect.objectContaining({ gps_points: [] }));
+    });
+
+    it('điểm GPS lệch quá 1 s ngoài cửa sổ: ERR_206, chỉ bỏ cửa sổ, Phiên vẫn ACTIVE', async () => {
+      sessions.findOne.mockResolvedValue(activeSession());
+
+      await expect(
+        verify(payload({ sessionId: SESSION, imuSamples: samples, gpsPoints: [point(tEnd + 1001)] })),
+      ).rejects.toMatchObject({ response: { code: 'ERR_206' } });
+
+      expect(sessions.save).not.toHaveBeenCalled();
+      expect(windows.insert).not.toHaveBeenCalled();
+      expect(audits.save).not.toHaveBeenCalled();
+    });
+
+    it('cửa sổ đầu có điểm GPS trước cửa sổ quá 1 s: ERR_206, không tạo Phiên', async () => {
+      await expect(
+        verify(payload({ imuSamples: samples, gpsPoints: [point(t0 - 1001)] })),
+      ).rejects.toMatchObject({ response: { code: 'ERR_206' } });
+
+      expect(sessions.save).not.toHaveBeenCalled();
+      expect(windows.insert).not.toHaveBeenCalled();
+    });
+  });
+
   describe('chữ ký HMAC', () => {
     const signedBody = (seq: number) => {
       const dto = payload({ sessionId: SESSION, seq });
@@ -334,6 +429,75 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
     });
   });
 
+  describe('Lịch sử Phiên chạy', () => {
+    const started = new Date('2026-11-20T01:00:00Z');
+    const finished = new Date('2026-11-20T01:15:00Z');
+    const done = () =>
+      activeSession({ status: 'COMPLETED', created_at: started, finished_at: finished, distance_meters: 2450.6 });
+
+    it('listSessions: chỉ Phiên của chính mình, mới nhất trước, phân trang', async () => {
+      sessions.find.mockResolvedValue([done()]);
+
+      const res = await service.listSessions(USER, 3, 20);
+
+      expect(sessions.find).toHaveBeenCalledWith({
+        where: { user_id: USER },
+        order: { created_at: 'DESC' },
+        skip: 40,
+        take: 20,
+      });
+      expect(res).toEqual([
+        {
+          sessionId: SESSION,
+          status: 'COMPLETED',
+          sessionType: 'FREE_RUN',
+          distanceMeters: 2450.6,
+          durationSeconds: 30,
+          hexCount: 0,
+          rejectionReason: null,
+          startedAt: started,
+          finishedAt: finished,
+        },
+      ]);
+    });
+
+    it('getSession: trả tổng, chuỗi cửa sổ theo seq và vệt GPS', async () => {
+      sessions.findOne.mockResolvedValue(done());
+      const recordedAt = new Date(1000);
+      sessions.manager.find.mockResolvedValue([
+        {
+          seq: 0,
+          speed_mps: 3,
+          cadence_spm: 170,
+          passed: true,
+          recorded_at: recordedAt,
+          gps_points: [
+            { lat: 10.8, lng: 106.7, timestamp: 1000, accuracy: 5 },
+            { lat: 10.81, lng: 106.71, timestamp: 2000, accuracy: 5 },
+          ],
+        },
+      ]);
+
+      const res = await service.getSession(USER, SESSION);
+
+      expect(sessions.findOne).toHaveBeenCalledWith({ where: { id: SESSION, user_id: USER } });
+      expect(sessions.manager.find).toHaveBeenCalledWith(SessionWindow, {
+        where: { session_id: SESSION },
+        order: { seq: 'ASC' },
+      });
+      expect(res).toMatchObject({ sessionId: SESSION, status: 'COMPLETED', distanceMeters: 2450.6 });
+      expect(res.windows).toEqual([{ seq: 0, speedMps: 3, cadenceSpm: 170, passed: true, recordedAt }]);
+      expect(res.route).toEqual({ type: 'MultiLineString', coordinates: [[[106.7, 10.8], [106.71, 10.81]]] });
+    });
+
+    it('getSession: Phiên của người khác hoặc không tồn tại → 404 ERR_204, không đọc vệt', async () => {
+      sessions.findOne.mockResolvedValue(null);
+
+      await expect(service.getSession(USER, SESSION)).rejects.toMatchObject({ response: { code: 'ERR_204' } });
+      expect(sessions.manager.find).not.toHaveBeenCalled();
+    });
+  });
+
   describe('finishSession: kết thúc Phiên chạy tự do', () => {
     const UNI = '33333333-3333-4333-8333-333333333333';
     const givenSession = (session: RunningSession | null) =>
@@ -352,7 +516,10 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
       });
       expect(tx.increment).toHaveBeenCalledWith(User, { id: USER }, 'personal_km', 2.456);
       expect(tx.increment).toHaveBeenCalledWith(University, { id: UNI }, 'total_season_km', 2.456);
-      expect(tx.update).toHaveBeenCalledWith(RunningSession, SESSION, { status: 'COMPLETED' });
+      expect(tx.update).toHaveBeenCalledWith(RunningSession, SESSION, {
+        status: 'COMPLETED',
+        finished_at: expect.any(Date),
+      });
       expect(res).toEqual({ sessionId: SESSION, distanceMeters: 2456, durationSeconds: 30, addedKm: 2.46 });
     });
 

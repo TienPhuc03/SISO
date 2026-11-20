@@ -6,16 +6,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/theme/siso_theme.dart';
 import '../../auth/presentation/logout_button.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../leaderboard/presentation/leaderboard_screen.dart';
+import '../../leaderboard/providers/season_rank_provider.dart';
+import '../../profile/presentation/profile_button.dart';
 import '../../tracking/presentation/active_run_screen.dart';
 import '../../tracking/presentation/sensor_log_screen.dart';
 import '../data/user_location_source.dart';
+import '../domain/hex_cell.dart' show parseHexColor;
 import '../domain/play_area.dart';
 import 'hex_pulse_layer.dart';
 import 'hexagon_layer.dart';
 import 'percent_dominance_bar.dart';
 import 'perf_panel.dart';
+import 'siso_bottom_nav.dart';
 
 /// Màn hình Bản đồ Chiếm đất Liên trường (Campus Turf War)
 class MapScreen extends ConsumerStatefulWidget {
@@ -25,6 +31,7 @@ class MapScreen extends ConsumerStatefulWidget {
   final TileProvider? tileProvider;
 
   static const LatLng initialCenter = PlayArea.defaultCenter;
+  static const String title = 'SISO';
   static const double initialZoom = 15;
   static const double userZoom = 16;
 
@@ -49,8 +56,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   bool _userMovedMap = false;
   Timer? _holdTimer;
 
+  /// Theo dõi vị trí liên tục (chỉ cập nhật chấm vị trí, không di chuyển camera).
+  StreamSubscription<LatLng>? _positionSub;
+
   @override
   void dispose() {
+    _positionSub?.cancel();
     _holdTimer?.cancel();
     _mapController.dispose();
     super.dispose();
@@ -81,7 +92,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       _moveCameraIfAllowed(lastKnown);
     }
 
-    final position = await source.currentPosition();
+    // Mở Bản đồ không xin quyền vị trí: chỉ xin khi chuẩn bị chạy, hoặc khi bấm "Vị trí của tôi".
+    final position = await source.currentPosition(requestPermission: userInitiated);
     if (!mounted) return;
     final userWaiting = _userWaiting;
     setState(() {
@@ -89,6 +101,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       _userWaiting = false;
       if (position != null) _userPosition = position;
     });
+
+    if (position != null) _followPosition(source);
 
     final target = cameraTargetFor(position);
     if (target != null) {
@@ -99,7 +113,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     final String message;
     if (position != null) {
-      message = 'Bạn đang ở ngoài khu thi đấu Bình Thạnh, bản đồ giữ nguyên khu vực Đấu trường.';
+      // Người dùng chủ động bấm: luôn đưa bản đồ tới chỗ họ, kể cả ngoài khu thi đấu.
+      _moveCameraIfAllowed(position, force: true);
+      message = 'Bạn đang ở ngoài khu thi đấu Bình Thạnh. Chạy ở đây vẫn được cộng km, '
+          'nhưng chỉ chiếm được đất trong các Đấu trường.';
     } else if (lastKnown != null) {
       _moveCameraIfAllowed(lastKnown, force: true);
       message = 'Chưa lấy được vị trí mới, đang hiện vị trí gần nhất máy còn nhớ.';
@@ -109,6 +126,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Bắt đầu nghe vị trí liên tục (một lần, sau khi đã có quyền vị trí).
+  void _followPosition(UserLocationSource source) {
+    _positionSub ??= source.positionStream().listen((p) {
+      if (mounted) setState(() => _userPosition = p);
+    });
   }
 
   /// Căn camera tới [target]. Lần tự động ([force] = false) không giật camera nếu người dùng
@@ -132,32 +156,23 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   void _cancelHold() => _holdTimer?.cancel();
 
+  void _openLeaderboard() {
+    // Bản đồ giữ seasonRankProvider sống nên số cũ không tự hết hạn: lấy số mới (kể cả km của trường khác).
+    ref.invalidate(seasonRankProvider);
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()));
+  }
+
+  void _openRun() => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const ActiveRunScreen()),
+      );
+
   @override
   Widget build(BuildContext context) {
     final perfOpen = ref.watch(perfPanelOpenProvider);
+    final session = ref.watch(authSessionProvider);
+    final campus = session is AuthSignedIn ? session.user.university : null;
 
     return Scaffold(
-      appBar: AppBar(
-        title: GestureDetector(
-          key: const Key('map_title'),
-          onTapDown: (_) => _startHold(),
-          onTapUp: (_) => _cancelHold(),
-          onTapCancel: _cancelHold,
-          child: const Text('SISO — Đại Chiến Bình Thạnh'),
-        ),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            key: const Key('leaderboard_button'),
-            tooltip: 'Bảng xếp hạng',
-            icon: const Icon(Icons.leaderboard),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
-            ),
-          ),
-          const LogoutButton(),
-        ],
-      ),
       body: Stack(
         children: [
           FlutterMap(
@@ -180,16 +195,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 MarkerLayer(markers: [
                   Marker(
                     point: p,
-                    width: 22,
-                    height: 22,
-                    child: const DecoratedBox(
-                      key: Key('user_location_marker'),
-                      decoration: BoxDecoration(
-                        color: Colors.blueAccent,
-                        shape: BoxShape.circle,
-                        border: Border.fromBorderSide(BorderSide(color: Colors.white, width: 3)),
-                      ),
-                    ),
+                    width: 44,
+                    height: 44,
+                    child: const UserLocationDot(key: Key('user_location_marker')),
                   ),
                 ]),
               const SimpleAttributionWidget(
@@ -197,51 +205,151 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               ),
             ],
           ),
-          // Thanh Dual-Metric Live HUD (% Đất & % Km Toàn cầu) ở đỉnh màn hình
-          const Positioned(
-            top: 12,
-            left: 16,
-            right: 16,
-            child: PercentDominanceBar(),
+          // Thanh nổi trên cùng + Dual-Metric Live HUD (% Đất & % Km)
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: sisoCard(radius: 20).copyWith(
+                      color: SisoColors.card.withValues(alpha: 0.95),
+                      boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 16, offset: Offset(0, 4))],
+                    ),
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          key: const Key('map_title'),
+                          onTapDown: (_) => _startHold(),
+                          onTapUp: (_) => _cancelHold(),
+                          onTapCancel: _cancelHold,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: SisoColors.primary,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const HexIcon(size: 16),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(MapScreen.title,
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                        ),
+                        const Spacer(),
+                        if (campus != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: SisoColors.bg,
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(color: SisoColors.border),
+                            ),
+                            child: Row(
+                              children: [
+                                CampusDot(color: parseHexColor(campus.color)),
+                                const SizedBox(width: 6),
+                                Text(campus.shortCode,
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        const ProfileButton(),
+                        const SizedBox(width: 8),
+                        const LogoutButton(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const PercentDominanceBar(),
+                ],
+              ),
+            ),
           ),
           Positioned(
-            left: 16,
-            bottom: 16,
-            child: FloatingActionButton.small(
-              key: const Key('my_location_button'),
-              heroTag: 'my_location',
-              tooltip: 'Vị trí của tôi',
-              onPressed: _userWaiting ? null : () => _locateUser(userInitiated: true),
-              child: _userWaiting
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.my_location),
+            left: 20,
+            bottom: 124,
+            child: SafeArea(
+              top: false,
+              child: Material(
+                key: const Key('my_location_button'),
+                color: SisoColors.card,
+                shape: const CircleBorder(side: BorderSide(color: SisoColors.border)),
+                elevation: 3,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _userWaiting ? null : () => _locateUser(userInitiated: true),
+                  child: SizedBox.square(
+                    dimension: 48,
+                    child: Center(
+                      child: _userWaiting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.my_location, color: SisoColors.primary, size: 22),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
           if (perfOpen)
             const Positioned(
               left: 8,
               right: 8,
-              bottom: 80,
+              bottom: 180,
               child: PerfPanel(),
             ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SisoBottomNav(
+              active: SisoTab.map,
+              onMap: () {},
+              onRun: _openRun,
+              onLeaderboard: _openLeaderboard,
+              onRunLongPress: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SensorLogScreen()),
+              ),
+            ),
+          ),
         ],
       ),
-      // Nhấn giữ nút "Chạy" mở màn Ghi log cảm biến (issue #8; ẩn, dùng được cả bản release IPA)
-      floatingActionButton: GestureDetector(
-        key: const Key('run_fab_hold'),
-        onLongPress: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const SensorLogScreen()),
-        ),
-        child: FloatingActionButton.extended(
-          heroTag: 'run',
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const ActiveRunScreen()),
+    );
+  }
+}
+
+/// Chấm vị trí người dùng: lõi teal, vòng trắng, quầng mờ.
+class UserLocationDot extends StatelessWidget {
+  const UserLocationDot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: SisoColors.primary.withValues(alpha: 0.2), shape: BoxShape.circle),
+        child: Container(
+          width: 20,
+          height: 20,
+          decoration: const BoxDecoration(
+            color: SisoColors.primary,
+            shape: BoxShape.circle,
+            border: Border.fromBorderSide(BorderSide(color: Colors.white, width: 4)),
+            boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 2))],
           ),
-          icon: const Icon(Icons.directions_run),
-          label: const Text('Chạy'),
         ),
       ),
     );

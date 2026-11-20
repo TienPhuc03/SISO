@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { ImuSampleDto } from './dto/telemetry-payload.dto';
 import { analyzeGait, GaitAnalysis } from './gait-analyzer';
 
+/** Sai số GPS tối đa (m) còn tin được; dùng chung cho Cổng Động học và vệt Đường chạy. */
+export const MAX_GPS_ACCURACY_M = 20;
+
+/** Tốc độ tối đa của người chạy bộ (32,4 km/h); dùng chung cho Cổng Động học và lọc điểm GPS. */
+export const MAX_HUMAN_SPEED_MPS = 9.0;
+
 export interface GigoCheckResult {
   isValid: boolean;
   errorCode: string | null;
@@ -10,8 +16,6 @@ export interface GigoCheckResult {
 
 @Injectable()
 export class AntiGigoService {
-  private readonly MAX_HUMAN_SPEED_MPS = 9.0; // 32.4 km/h
-
   /**
    * Tầng 1: Kinematic Gate - Kiểm tra vận tốc & gia tốc vật lý
    */
@@ -25,7 +29,7 @@ export class AntiGigoService {
     }
 
     // iOS trả accuracy = -1 khi chưa có tín hiệu vệ tinh: coi như sai số quá lớn.
-    if (accuracy < 0 || accuracy > 20.0) {
+    if (accuracy < 0 || accuracy > MAX_GPS_ACCURACY_M) {
       return {
         isValid: false,
         errorCode: 'ERR_203',
@@ -33,7 +37,7 @@ export class AntiGigoService {
       };
     }
 
-    if (speedMps > this.MAX_HUMAN_SPEED_MPS) {
+    if (speedMps > MAX_HUMAN_SPEED_MPS) {
       return {
         isValid: false,
         errorCode: 'ERR_202',

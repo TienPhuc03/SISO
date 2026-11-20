@@ -25,7 +25,7 @@ class ControlledLocationSource implements UserLocationSource {
   final fixes = <Completer<LatLng?>>[];
 
   @override
-  Future<LatLng?> currentPosition() {
+  Future<LatLng?> currentPosition({bool requestPermission = true}) {
     final c = Completer<LatLng?>();
     fixes.add(c);
     return c.future;
@@ -33,6 +33,11 @@ class ControlledLocationSource implements UserLocationSource {
 
   @override
   Future<LatLng?> lastKnownPosition() async => lastKnown;
+
+  final moves = StreamController<LatLng>.broadcast();
+
+  @override
+  Stream<LatLng> positionStream() => moves.stream;
 }
 
 class _BlankTileProvider extends TileProvider {
@@ -199,6 +204,34 @@ void main() {
       expect(s.fixes, hasLength(2));
 
       await resolve(tester, s, hutech);
+    });
+  });
+
+  group('Vị trí thật của người dùng', () {
+    testWidgets('ở ngoài khu, bấm "Vị trí của tôi": vẫn đưa bản đồ tới chỗ người dùng và báo ngoài khu',
+        (tester) async {
+      final s = await pumpMap(tester);
+      await resolve(tester, s, hanoi);
+      expect(camera(tester).center, PlayArea.defaultCenter, reason: 'lần tự động giữ khu Đấu trường');
+
+      await tester.tap(find.byKey(const Key('my_location_button')));
+      await tester.pump();
+      await resolve(tester, s, hanoi);
+
+      expect(camera(tester).center, hanoi);
+      expect(find.textContaining('ngoài khu thi đấu'), findsOneWidget);
+    });
+
+    testWidgets('di chuyển: chấm vị trí cập nhật theo luồng GPS, camera đứng yên', (tester) async {
+      final s = await pumpMap(tester);
+      await resolve(tester, s, hutech);
+
+      s.moves.add(uef);
+      await tester.pump();
+
+      final marker = tester.widget<MarkerLayer>(find.byType(MarkerLayer)).markers.single;
+      expect(marker.point, uef);
+      expect(camera(tester).center, hutech);
     });
   });
 }

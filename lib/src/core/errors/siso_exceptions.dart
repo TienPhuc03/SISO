@@ -29,6 +29,15 @@ class SisoErrorCodes {
   /// ERR_205: Cửa sổ cảm biến sai chữ ký HMAC hoặc bị gửi lại
   static const String invalidSignature = 'ERR_205';
 
+  /// ERR_104: Ảnh đại diện không phải JPEG/PNG/WebP hoặc thiếu file
+  static const String avatarInvalid = 'ERR_104';
+
+  /// ERR_105: Sinh viên chưa có ảnh đại diện (GET /api/v1/profile/avatar/:userId)
+  static const String avatarNotFound = 'ERR_105';
+
+  /// ERR_206: Điểm GPS nằm ngoài thời gian của cửa sổ cảm biến; chỉ bỏ cửa sổ đó, Phiên chạy tiếp tục
+  static const String invalidGpsPoints = 'ERR_206';
+
   /// ERR_301: Diện tích vòng khép vượt giới hạn 150 ô H3
   static const String loopTooLarge = 'ERR_301';
 
@@ -40,6 +49,9 @@ class SisoErrorCodes {
 
   /// ERR_304: Vòng chạy có ô nằm ngoài Đấu trường (hoặc ngoài khu thi đấu nếu không gửi arenaId)
   static const String outOfArena = 'ERR_304';
+
+  /// ERR_305: Đường biên vòng khép có ô không nằm trên vệt GPS thật của Phiên chạy
+  static const String routeMismatch = 'ERR_305';
 }
 
 class SisoException implements Exception {

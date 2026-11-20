@@ -6,6 +6,7 @@ import { TelemetryModule } from './modules/telemetry/telemetry.module';
 import { TurfModule } from './modules/turf/turf.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
+import { ProfileModule } from './modules/profile/profile.module';
 
 import { University } from './entities/university.entity';
 import { User } from './entities/user.entity';
@@ -15,6 +16,8 @@ import { RunningSession } from './entities/running-session.entity';
 import { Season } from './entities/season.entity';
 import { HallOfFame } from './entities/hall-of-fame.entity';
 import { GigoAuditLog } from './entities/gigo-audit-log.entity';
+import { SessionWindow } from './entities/session-window.entity';
+import { UserAvatar } from './entities/user-avatar.entity';
 
 @Module({
   imports: [
@@ -48,6 +51,8 @@ import { GigoAuditLog } from './entities/gigo-audit-log.entity';
             Season,
             HallOfFame,
             GigoAuditLog,
+            SessionWindow,
+            UserAvatar,
           ],
           synchronize: false,
           logging: configService.get<string>('NODE_ENV') === 'development',
@@ -61,6 +66,7 @@ import { GigoAuditLog } from './entities/gigo-audit-log.entity';
     TurfModule,
     RealtimeModule,
     LeaderboardModule,
+    ProfileModule,
   ],
 })
 export class AppModule {}

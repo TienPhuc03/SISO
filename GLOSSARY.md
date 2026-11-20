@@ -44,6 +44,26 @@ _Tránh dùng_: Chạy đánh lẻ, Chạy về quê, Chạy từ xa
 Đường chạy khép kín của một Phiên chạy trong Đấu trường; các Ô đất nằm trên và bên trong đường đó là phần chịu tác động của Phiên chạy.
 _Tránh dùng_: Vòng lặp, Chu trình, Vòng chạy, Loop closure
 
+**Cửa sổ** (`Window`):
+Một đoạn 5,12 giây của Phiên chạy (256 mẫu gia tốc) kèm vệt GPS cùng lúc; là đơn vị server kiểm định và cộng quãng đường.
+_Tránh dùng_: Gói tin, Batch, Chunk
+
+**Đường chạy** (`Route`):
+Vệt GPS thật của một Phiên chạy, ghép từ các Cửa sổ, tách thành nhiều đoạn ở chỗ Tạm dừng hoặc mất tín hiệu; dùng để vẽ bản đồ và đối chiếu Vòng khép.
+_Tránh dùng_: Track, Polyline, Lộ trình
+
+**Tạm dừng** (`Pause`):
+Khoảng Sinh viên ngừng chạy giữa Phiên chạy mà không kết thúc; không gửi Cửa sổ, nên không cộng thời gian, quãng đường hay Đường chạy.
+_Tránh dùng_: Nghỉ, Dừng (vì Dừng là kết thúc Phiên chạy)
+
+**Phiên bỏ dở** (`Abandoned Run`):
+Phiên chạy đang chạy nhưng không có Cửa sổ mới quá 30 phút (app bị tắt, Tạm dừng quá lâu); server tự kết thúc và vẫn cộng km đã kiểm định.
+_Tránh dùng_: Phiên treo, Phiên mồ côi
+
+**Lịch sử Phiên chạy** (`Run History`):
+Danh sách các Phiên chạy của chính Sinh viên (kể cả Phiên bị loại), mỗi Phiên xem được Đường chạy, tốc độ và Nhịp bước theo từng Cửa sổ.
+_Tránh dùng_: Nhật ký chạy, Activity feed
+
 ### Giữ đất
 
 **Trung lập** (`Neutral`):
@@ -135,5 +155,5 @@ Số bước chân mỗi phút (SPM) của Sinh viên trong Phiên chạy; là c
 _Tránh dùng_: Tần số bước, Cadence (trong văn bản tiếng Việt)
 
 **Cổng Hình học** (`Topology Gate`):
-Cổng kiểm định tầng 3: chỉ chấp nhận Vòng khép hợp lệ và không vượt giới hạn số Ô đất cho phép.
+Cổng kiểm định tầng 3: chỉ chấp nhận Vòng khép hợp lệ, không vượt giới hạn số Ô đất cho phép và nằm trên Đường chạy thật của Phiên chạy.
 _Tránh dùng_: Flood Fill, Tầng H3

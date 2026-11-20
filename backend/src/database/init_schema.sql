@@ -147,6 +147,14 @@ CREATE TABLE IF NOT EXISTS public.users (
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS trust_score FLOAT DEFAULT 100.0;
 
+-- [Hồ sơ] Ảnh đại diện tách bảng riêng: bảng users cho đọc công khai, ảnh thì chỉ backend đọc.
+CREATE TABLE IF NOT EXISTS public.user_avatars (
+    user_id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+    image BYTEA NOT NULL CHECK (octet_length(image) <= 524288),   -- 512 KB, khớp MAX_AVATAR_BYTES
+    mime_type VARCHAR(20) NOT NULL CHECK (mime_type IN ('image/jpeg', 'image/png', 'image/webp')),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON public.users(email);
 CREATE INDEX IF NOT EXISTS idx_users_university ON public.users(university_id);
 
@@ -236,6 +244,25 @@ BEGIN
             ADD CONSTRAINT running_sessions_status_check CHECK (status IN ('ACTIVE', 'REJECTED', 'COMPLETED'));
     END IF;
 END $$;
+
+-- [Đường chạy] Thời điểm Phiên chạy kết thúc (COMPLETED hoặc REJECTED); NULL khi còn ACTIVE.
+ALTER TABLE public.running_sessions ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP WITH TIME ZONE;
+
+-- ============================================================================
+-- 5b. BẢNG CỬA SỔ CỦA PHIÊN CHẠY (SESSION_WINDOWS)
+-- Mỗi cửa sổ 5,12 s đã qua Cổng Động học là một dòng: vệt GPS + tốc độ/nhịp bước cho Lịch sử Phiên chạy.
+-- Vệt lưu JSONB vì không có truy vấn không gian nào; đối chiếu ô H3 làm bằng h3-js ở backend.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.session_windows (
+    session_id UUID NOT NULL REFERENCES public.running_sessions(id) ON DELETE CASCADE,
+    seq INT NOT NULL CHECK (seq >= 0),                -- cửa sổ đầu = 0
+    speed_mps FLOAT NOT NULL CHECK (speed_mps >= 0),
+    cadence_spm INT NOT NULL DEFAULT 0,
+    passed BOOLEAN NOT NULL,                           -- false = cửa sổ chỉ bị cảnh báo ở Cổng Sinh trắc
+    gps_points JSONB NOT NULL DEFAULT '[]'::jsonb,     -- [{lat, lng, timestamp, accuracy}]
+    recorded_at TIMESTAMP WITH TIME ZONE NOT NULL,     -- thời điểm mẫu IMU đầu tiên của cửa sổ
+    PRIMARY KEY (session_id, seq)
+);
 
 -- ============================================================================
 -- 6. BẢNG NHẬT KÝ CHẶN DỮ LIỆU RÁC (GIGO_AUDIT_LOGS)
@@ -415,6 +442,9 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.h3_hexagons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.running_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gigo_audit_logs ENABLE ROW LEVEL SECURITY;
+-- Vệt GPS lộ nơi ở của Sinh viên: bật RLS, KHÔNG tạo policy, chỉ backend (role postgres) đọc được.
+ALTER TABLE public.session_windows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_avatars ENABLE ROW LEVEL SECURITY;  -- không policy: chỉ backend đọc
 ALTER TABLE public.seasons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hall_of_fame ENABLE ROW LEVEL SECURITY;
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/siso_theme.dart';
 import '../domain/leaderboard_models.dart';
 import '../providers/season_rank_provider.dart';
 
@@ -10,20 +11,22 @@ class HallOfFameCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: sisoCard(),
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.emoji_events, color: Colors.amber),
-                const SizedBox(width: 8),
-                Text('Đại sảnh Danh vọng', style: Theme.of(context).textTheme.titleMedium),
+                Icon(Icons.emoji_events_outlined, color: SisoColors.primary, size: 20),
+                SizedBox(width: 8),
+                Text('Đại sảnh Danh vọng', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: SisoColors.border),
+            const SizedBox(height: 12),
             ref.watch(hallOfFameProvider).when(
                   loading: () => const Center(child: CircularProgressIndicator()),
                   error: (_, __) => _Retry(
@@ -36,7 +39,6 @@ class HallOfFameCard extends ConsumerWidget {
                 ),
           ],
         ),
-      ),
     );
   }
 }
@@ -48,13 +50,20 @@ class _ChampionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(radius: 8, backgroundColor: entry.color),
-      title: Text(entry.championName),
-      subtitle: Text('Mùa ${entry.seasonNumber}'),
-      trailing: Text('${entry.compositePct.toStringAsFixed(1)}%'),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          CampusDot(color: entry.color),
+          const SizedBox(width: 8),
+          Text(entry.championName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          const Text('  ·  ', style: TextStyle(fontSize: 13, color: SisoColors.caption)),
+          Text('Mùa ${entry.seasonNumber}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: SisoColors.body)),
+          const Spacer(),
+          Text('${viDecimal(entry.compositePct)}%', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+        ],
+      ),
     );
   }
 }

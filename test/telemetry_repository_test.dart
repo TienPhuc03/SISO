@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:siso_project/src/features/tracking/data/simulated_telemetry_source.dart';
 import 'package:siso_project/src/features/tracking/data/telemetry_repository.dart';
 import 'package:siso_project/src/features/tracking/domain/telemetry_window.dart';
@@ -91,6 +92,19 @@ void main() {
       final second = source.buildWindow();
 
       expect(second.samples.first.timestampMs - first.samples.first.timestampMs, 5120);
+    });
+
+    test('vệt GPS giả: mỗi giây một điểm, điểm nằm trong đúng cửa sổ của nó, đi đúng tốc độ', () {
+      final source = SimulatedTelemetrySource(random: Random(1));
+      final fixes = [for (var i = 0; i < 5; i++) source.nextFix()];
+      final w = source.buildWindow();
+
+      final t0 = w.samples.first.timestampMs, t1 = w.samples.last.timestampMs;
+      expect(w.gpsPoints, isNotEmpty);
+      expect(w.gpsPoints.every((p) => p.timestampMs >= t0 && p.timestampMs <= t1 + 1000), isTrue);
+      final meters = const Distance(roundResult: false).distance(LatLng(fixes[0].lat, fixes[0].lng), LatLng(fixes[1].lat, fixes[1].lng));
+      expect(meters, closeTo(3.2, 0.2));
+      expect(source.buildWindow().gpsPoints, isEmpty, reason: 'điểm đã gửi không gửi lại');
     });
 
     test('xe máy có tốc độ chạy (3,4 m/s) để Cổng Sinh trắc phải xét', () {

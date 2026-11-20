@@ -34,6 +34,11 @@ dependencies:
   wakelock_plus: ^1.8.2
   path_provider: ^2.1.6
 
+  # Hồ sơ: chọn ảnh đại diện từ thư viện (thu nhỏ sẵn trước khi tải lên)
+  image_picker: ^1.1.2
+  gal: ^3.0.1
+  flutter_local_notifications: ^23.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

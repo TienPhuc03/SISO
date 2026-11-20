@@ -121,6 +121,25 @@ void main() {
       expect(windows[1].startTMs, 256 * 20);
     });
 
+    test('gpsPoints: chỉ điểm nằm trong cửa sổ (server trả ERR_206 nếu lệch), cộng mốc thời gian', () {
+      // Cửa sổ 0 phủ 0..5100 ms; điểm ở -1000 và 6000 nằm ngoài.
+      final w = buildReplayWindows(makeLog(256, [gpsAt(-1000), gpsAt(1000), gpsAt(4000), gpsAt(6000)]),
+              baseEpochMs: 1000000)
+          .single
+          .window;
+      expect(w.gpsPoints.map((p) => p.timestampMs), [1001000, 1004000]);
+      expect(w.toJson()['gpsPoints'], hasLength(2));
+    });
+
+    test('gpsPoints: GPS báo dày hơn 20 điểm / cửa sổ thì lấy đều 20 điểm, giữ điểm đầu và cuối', () {
+      final w = buildReplayWindows(makeLog(256, [for (var t = 0; t <= 5100; t += 100) gpsAt(t)]), baseEpochMs: 0)
+          .single
+          .window;
+      expect(w.gpsPoints, hasLength(maxGpsPointsPerWindow));
+      expect(w.gpsPoints.first.timestampMs, 0);
+      expect(w.gpsPoints.last.timestampMs, 5100);
+    });
+
     test('mẫu giữ nguyên trục và cộng mốc thời gian', () {
       final w = buildReplayWindows(makeLog(256, [gpsAt(0)]), baseEpochMs: 1000000).single.window;
       expect(w.samples[1].az, 10.8);
@@ -329,6 +348,9 @@ void main() {
 
   testWidgets('màn Chạy + phát lại log 10x: gửi đủ các cửa sổ 256 mẫu lên server, giữ sessionId',
       (tester) async {
+    // Màn Chạy cao hơn khung test mặc định 800×600: bộ chọn nguồn phải nằm trong màn hình mới bấm được.
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final repo = _RecordingRepository();
     final log = makeLog(600, [for (var t = 0; t <= 12000; t += 1000) gpsAt(t, spd: 3.2)]);
     await tester.pumpWidget(
@@ -350,7 +372,8 @@ void main() {
     await tester.tap(find.byKey(const Key('replay_speed_10')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Bắt đầu chạy'));
+    // Chữ "Bắt đầu" là nhãn dưới nút tròn, không bấm được: bấm vào nút.
+    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
     await tester.pump();
     // Nguồn đang chạy: không đổi được nguồn dữ liệu
     await tester.tap(find.text('Giả lập'));
@@ -368,7 +391,7 @@ void main() {
     expect(repo.signingKeys, [null, 'khoa-phien']);
     expect(repo.seqs, [null, 1]);
 
-    await tester.tap(find.text('Dừng chạy'));
+    await tester.tap(find.text('Kết thúc'));
     await tester.pump();
   });
 

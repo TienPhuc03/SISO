@@ -51,6 +51,10 @@ export class RunningSession {
   @Column({ type: 'int', default: 0 })
   last_window_seq: number;
 
+  /** Thời điểm kết thúc (COMPLETED hoặc REJECTED); null khi còn ACTIVE. */
+  @Column({ type: 'timestamptz', nullable: true })
+  finished_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 
