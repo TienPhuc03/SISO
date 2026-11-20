@@ -6,8 +6,11 @@ import { AntiGigoService, BiometricCheckResult } from './anti-gigo.service';
 import { TelemetryPayloadDto } from './dto/telemetry-payload.dto';
 import { VerifyWindowResultDto } from './dto/verify-window-response.dto';
 import { FinishSessionResultDto } from './dto/finish-session.dto';
+import { SessionDetailDto, SessionSummaryDto } from './dto/session-history.dto';
+import { buildRoute, filterPlausiblePoints } from './session-route';
 import { RunningSession } from '../../entities/running-session.entity';
 import { GigoAuditLog } from '../../entities/gigo-audit-log.entity';
+import { GpsPoint, SessionWindow } from '../../entities/session-window.entity';
 import { User } from '../../entities/user.entity';
 import { University } from '../../entities/university.entity';
 import { deriveSigningKey, isValidSignature } from './telemetry-signature';
@@ -25,6 +28,9 @@ type WindowOutcome =
 
 /** Số cửa sổ liên tiếp không qua Cổng Sinh trắc thì Phiên chạy bị loại. */
 export const MAX_CONSECUTIVE_BIOMETRIC_FAILURES = 2;
+
+/** Điểm GPS được lệch tối đa bấy nhiêu ms ra ngoài khoảng mẫu IMU của cửa sổ (GPS và IMU không cùng nhịp). */
+export const GPS_POINT_WINDOW_TOLERANCE_MS = 1000;
 
 /**
  * Kiểm định Phiên chạy theo từng cửa sổ 256 mẫu (Module 4).
@@ -51,8 +57,18 @@ export class TelemetryService {
     proof?: WindowProof,
   ): Promise<VerifyWindowResultDto> {
     // Cửa sổ đầu: chưa có Phiên chạy (chỉ tạo khi qua Cổng Động học), chưa ai biết sessionId nên không cần khoá.
+    // Vẫn chạy trong transaction để Phiên chạy và cửa sổ 0 cùng được lưu hoặc cùng không.
     if (!dto.sessionId) {
-      const outcome = await this.processWindow(this.sessionRepository, this.auditRepository, userId, null, dto);
+      const outcome = await this.sessionRepository.manager.transaction((tx) =>
+        this.processWindow(
+          tx.getRepository(RunningSession),
+          tx.getRepository(GigoAuditLog),
+          tx.getRepository(SessionWindow),
+          userId,
+          null,
+          dto,
+        ),
+      );
       if (outcome.rejection) throw outcome.rejection;
       return { ...outcome.result, signingKey: this.signingKeyOf(outcome.result.sessionId) };
     }
@@ -62,7 +78,15 @@ export class TelemetryService {
     const outcome = await this.sessionRepository.manager.transaction(async (tx) => {
       const sessions = tx.getRepository(RunningSession);
       const session = await this.loadActiveSession(sessions, userId, dto.sessionId);
-      return this.processWindow(sessions, tx.getRepository(GigoAuditLog), userId, session, dto, proof);
+      return this.processWindow(
+        sessions,
+        tx.getRepository(GigoAuditLog),
+        tx.getRepository(SessionWindow),
+        userId,
+        session,
+        dto,
+        proof,
+      );
     });
     // Ném SAU khi commit: trạng thái REJECTED và nhật ký GIGO phải được lưu, không bị rollback.
     if (outcome.rejection) throw outcome.rejection;
@@ -76,6 +100,7 @@ export class TelemetryService {
   private async processWindow(
     sessions: Repository<RunningSession>,
     audits: Repository<GigoAuditLog>,
+    windows: Repository<SessionWindow>,
     userId: string,
     existing: RunningSession | null,
     dto: TelemetryPayloadDto,
@@ -101,6 +126,16 @@ export class TelemetryService {
       );
     }
     if (existing) existing.last_window_seq = dto.seq;
+
+    // Vệt GPS lệch thời gian là lỗi client, không phải gian lận: chỉ bỏ cửa sổ (như ERR_203), không loại Phiên.
+    if (!this.gpsPointsInsideWindow(dto)) {
+      return {
+        rejection: new BadRequestException({
+          code: 'ERR_206',
+          message: 'INVALID_GPS_POINTS: Điểm GPS nằm ngoài thời gian của cửa sổ cảm biến.',
+        }),
+      };
+    }
 
     // Tầng 1: Cổng Động học (DEV 1). Không cho bỏ qua lần nào.
     const kinematic = this.antiGigoService.validateKinematics(
@@ -144,6 +179,19 @@ export class TelemetryService {
     session.duration_seconds = Math.round(session.duration_seconds + windowSeconds);
     const saved = await sessions.save(session);
 
+    // Lưu cửa sổ cho Lịch sử Phiên chạy (cùng transaction với tổng quãng đường). Cửa sổ đầu là seq 0.
+    // Chỉ lưu điểm đi tới được từ điểm đã lưu trước đó: toạ độ bịa không kéo được Đường chạy (và Vòng khép) đi xa.
+    const anchor = existing ? await this.lastStoredPoint(windows, saved.id) : null;
+    await windows.insert({
+      session_id: saved.id,
+      seq: existing ? dto.seq : 0,
+      speed_mps: dto.averageSpeedMps,
+      cadence_spm: Math.round(biometric.analysis.cadenceSpm),
+      passed: biometric.isValid,
+      gps_points: filterPlausiblePoints(dto.gpsPoints ?? [], anchor),
+      recorded_at: new Date(dto.imuSamples[0].timestamp),
+    });
+
     return { result: this.toResult(saved, biometric) };
   }
 
@@ -165,7 +213,7 @@ export class TelemetryService {
       if (user?.university_id) {
         await tx.increment(University, { id: user.university_id }, 'total_season_km', km);
       }
-      await tx.update(RunningSession, session.id, { status: 'COMPLETED' });
+      await tx.update(RunningSession, session.id, { status: 'COMPLETED', finished_at: new Date() });
 
       return {
         sessionId: session.id,
@@ -174,6 +222,75 @@ export class TelemetryService {
         addedKm: Number(km.toFixed(2)),
       };
     });
+  }
+
+  /**
+   * Điểm GPS cuối đã lưu của Phiên chạy, bỏ qua Cửa sổ không có điểm: nếu chỉ lấy Cửa sổ ngay trước,
+   * gửi một Cửa sổ rỗng là xoá được điểm neo rồi dịch chuyển tức thời.
+   */
+  private async lastStoredPoint(windows: Repository<SessionWindow>, sessionId: string): Promise<GpsPoint | null> {
+    const rows: { point: GpsPoint }[] = await windows.query(
+      `SELECT gps_points -> -1 AS point FROM public.session_windows
+       WHERE session_id = $1 AND jsonb_array_length(gps_points) > 0
+       ORDER BY seq DESC LIMIT 1`,
+      [sessionId],
+    );
+    return rows[0]?.point ?? null;
+  }
+
+  /** Mọi điểm GPS nằm trong khoảng mẫu IMU của cửa sổ, nới thêm GPS_POINT_WINDOW_TOLERANCE_MS mỗi đầu. */
+  private gpsPointsInsideWindow(dto: TelemetryPayloadDto): boolean {
+    const from = dto.imuSamples[0].timestamp - GPS_POINT_WINDOW_TOLERANCE_MS;
+    const to = dto.imuSamples[dto.imuSamples.length - 1].timestamp + GPS_POINT_WINDOW_TOLERANCE_MS;
+    return (dto.gpsPoints ?? []).every((p) => p.timestamp >= from && p.timestamp <= to);
+  }
+
+  /** Lịch sử Phiên chạy của chính Sinh viên, mới nhất trước. */
+  async listSessions(userId: string, page: number, limit: number): Promise<SessionSummaryDto[]> {
+    const rows = await this.sessionRepository.find({
+      where: { user_id: userId },
+      order: { created_at: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return rows.map((s) => this.toSummary(s));
+  }
+
+  /** Chi tiết một Phiên chạy: tổng, chuỗi cửa sổ, Đường chạy. Phiên của người khác trả 404 như không tồn tại. */
+  async getSession(userId: string, sessionId: string): Promise<SessionDetailDto> {
+    const session = await this.sessionRepository.findOne({ where: { id: sessionId, user_id: userId } });
+    if (!session) {
+      throw new NotFoundException({ code: 'ERR_204', message: 'SESSION_NOT_FOUND: Không tìm thấy Phiên chạy.' });
+    }
+    const windows = await this.sessionRepository.manager.find(SessionWindow, {
+      where: { session_id: session.id },
+      order: { seq: 'ASC' },
+    });
+    return {
+      ...this.toSummary(session),
+      windows: windows.map((w) => ({
+        seq: w.seq,
+        speedMps: w.speed_mps,
+        cadenceSpm: w.cadence_spm,
+        passed: w.passed,
+        recordedAt: w.recorded_at,
+      })),
+      route: buildRoute(windows),
+    };
+  }
+
+  private toSummary(s: RunningSession): SessionSummaryDto {
+    return {
+      sessionId: s.id,
+      status: s.status,
+      sessionType: s.session_type,
+      distanceMeters: s.distance_meters,
+      durationSeconds: s.duration_seconds,
+      hexCount: s.hex_count,
+      rejectionReason: s.rejection_reason ?? null,
+      startedAt: s.created_at,
+      finishedAt: s.finished_at ?? null,
+    };
   }
 
   private signingKeyOf(sessionId: string): string {
@@ -241,6 +358,7 @@ export class TelemetryService {
       session.status = 'REJECTED';
       session.is_valid = false;
       session.rejection_reason = errorCode;
+      session.finished_at = new Date();
       sessionId = (await sessions.save(session)).id;
     }
 

@@ -5,9 +5,10 @@ import { TelemetryService } from './telemetry.service';
 import { AntiGigoService } from './anti-gigo.service';
 import { RunningSession } from '../../entities/running-session.entity';
 import { GigoAuditLog } from '../../entities/gigo-audit-log.entity';
+import { SessionWindow } from '../../entities/session-window.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([RunningSession, GigoAuditLog])],
+  imports: [TypeOrmModule.forFeature([RunningSession, GigoAuditLog, SessionWindow])],
   controllers: [TelemetryController],
   providers: [TelemetryService, AntiGigoService],
   exports: [TelemetryService, AntiGigoService],

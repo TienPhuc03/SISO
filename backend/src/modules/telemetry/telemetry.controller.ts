@@ -1,9 +1,23 @@
-import { Controller, Post, Body, Headers, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Request,
+  Query,
+  Param,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiOkResponse, ApiHeader } from '@nestjs/swagger';
 import { TelemetryService } from './telemetry.service';
 import { TelemetryPayloadDto } from './dto/telemetry-payload.dto';
 import { VerifyWindowResponseDto } from './dto/verify-window-response.dto';
 import { FinishSessionDto, FinishSessionResponseDto } from './dto/finish-session.dto';
+import { ListSessionsQueryDto, SessionDetailResponseDto, SessionListResponseDto } from './dto/session-history.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BaseResponseDto } from '../../common/dto/base-response.dto';
 
@@ -29,7 +43,7 @@ export class TelemetryController {
     status: 400,
     description:
       'ERR_201 (GPS giả), ERR_202 (vượt tốc độ người, hoặc 2 cửa sổ liên tiếp nghi đi xe máy, hoặc phiên đã bị loại), ERR_205 (sai chữ ký hoặc gửi lại cửa sổ cũ): Phiên chạy bị loại. ' +
-      'ERR_203 (chưa có tín hiệu vệ tinh, sai số âm hoặc > 20 m): chỉ bỏ cửa sổ này, Phiên chạy tiếp tục.',
+      'ERR_203 (chưa có tín hiệu vệ tinh, sai số âm hoặc > 20 m), ERR_206 (điểm GPS lệch quá 1 s ngoài thời gian cửa sổ): chỉ bỏ cửa sổ này, Phiên chạy tiếp tục.',
   })
   @ApiResponse({ status: 401, description: 'Thiếu hoặc sai JWT' })
   @ApiResponse({ status: 404, description: 'ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc đã kết thúc' })
@@ -62,5 +76,35 @@ export class TelemetryController {
   async finishSession(@Request() req, @Body() dto: FinishSessionDto) {
     const result = await this.telemetryService.finishSession(req.user.userId, dto.sessionId);
     return BaseResponseDto.ok('Đã kết thúc Phiên chạy.', result);
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Lịch sử Phiên chạy của Sinh viên đang đăng nhập',
+    description: 'Mới nhất trước, gồm cả Phiên đang chạy và Phiên bị loại. Không kèm vệt GPS; xem chi tiết để lấy Đường chạy.',
+  })
+  @ApiOkResponse({ type: SessionListResponseDto })
+  @ApiResponse({ status: 400, description: 'page < 1 hoặc limit ngoài [1, 50]' })
+  @ApiResponse({ status: 401, description: 'Thiếu hoặc sai JWT' })
+  async listSessions(@Request() req, @Query() query: ListSessionsQueryDto) {
+    const result = await this.telemetryService.listSessions(req.user.userId, query.page, query.limit);
+    return BaseResponseDto.ok('Lịch sử Phiên chạy.', result);
+  }
+
+  @Get('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Chi tiết một Phiên chạy: tổng, chuỗi cửa sổ (tốc độ / nhịp bước), Đường chạy GeoJSON',
+  })
+  @ApiOkResponse({ type: SessionDetailResponseDto })
+  @ApiResponse({ status: 400, description: 'id không phải UUID' })
+  @ApiResponse({ status: 401, description: 'Thiếu hoặc sai JWT' })
+  @ApiResponse({ status: 404, description: 'ERR_204: Phiên chạy không tồn tại hoặc của Sinh viên khác' })
+  async getSession(@Request() req, @Param('id', ParseUUIDPipe) id: string) {
+    const result = await this.telemetryService.getSession(req.user.userId, id);
+    return BaseResponseDto.ok('Chi tiết Phiên chạy.', result);
   }
 }
