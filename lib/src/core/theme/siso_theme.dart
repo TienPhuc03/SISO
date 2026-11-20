@@ -128,7 +128,8 @@ class HexIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      CustomPaint(size: Size.square(size), painter: _HexPainter(color, filled, stroke));
+      // Lục giác đều đầu nhọn: rộng = cao × √3/2
+      CustomPaint(size: Size(size * 0.866, size), painter: _HexPainter(color, filled, stroke));
 }
 
 class _HexPainter extends CustomPainter {

@@ -90,6 +90,9 @@ class _NotificationPermissionPromptState extends ConsumerState<NotificationPermi
         content: const Text(
           'SISO sẽ nhắc bạn khi Ô đất của trường sắp hết Độ bền, để kịp Tuần tra bảo vệ trước khi về Trung lập.',
         ),
+        // Nút chính rộng hết khung nên hai nút luôn xếp dọc: nút chính trên, "Để sau" căn giữa bên dưới.
+        actionsOverflowAlignment: OverflowBarAlignment.center,
+        actionsOverflowDirection: VerticalDirection.up,
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Để sau')),
           FilledButton(
