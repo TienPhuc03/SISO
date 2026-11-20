@@ -35,6 +35,9 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen> {
   final _cardKey = GlobalKey();
   bool _exporting = false;
 
+  /// Ẩn 200 m đầu/cuối trên thẻ và ảnh xuất ra. Mặc định hiện đủ để khoe thành tích.
+  bool _hideEnds = false;
+
   String get _fileName => 'siso_phien_chay_${widget.sessionId}';
 
   void _toast(String text) {
@@ -146,7 +149,17 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen> {
                         runnerName: profile?.displayName,
                         campusCode: profile?.campusShortCode,
                         tileProvider: widget.tileProvider,
+                        hideEnds: _hideEnds,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      key: const Key('hide_route_ends'),
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Ẩn điểm xuất phát và kết thúc'),
+                      subtitle: const Text('Bỏ 200 m đầu và cuối Đường chạy, để ảnh chia sẻ không lộ nơi ở.'),
+                      value: _hideEnds,
+                      onChanged: (v) => setState(() => _hideEnds = v),
                     ),
                   ],
                 ),
@@ -181,18 +194,28 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen> {
 
 /// Thẻ tổng kết Phiên chạy: phần được chụp thành ảnh khi xuất.
 class RunShareCard extends StatelessWidget {
-  const RunShareCard({super.key, required this.detail, this.runnerName, this.campusCode, this.tileProvider});
+  const RunShareCard({
+    super.key,
+    required this.detail,
+    this.runnerName,
+    this.campusCode,
+    this.tileProvider,
+    this.hideEnds = false,
+  });
 
   final RunDetail detail;
   final String? runnerName;
   final String? campusCode;
   final TileProvider? tileProvider;
 
+  /// Bỏ 200 m đầu/cuối và hai chấm xuất phát/kết thúc.
+  final bool hideEnds;
+
   @override
   Widget build(BuildContext context) {
     final run = detail.summary;
     final (statusText, statusColor) = runStatusBadge(run);
-    final route = detail.route;
+    final route = hideEnds ? hideRouteEnds(detail.route) : detail.route;
     final points = [for (final s in route) ...s];
     final cadence = detail.avgCadence;
 
@@ -208,8 +231,11 @@ class RunShareCard extends StatelessWidget {
                 ? Container(
                     color: SisoColors.tint,
                     alignment: Alignment.center,
-                    child: const Text('Không có Đường chạy để hiển thị',
-                        style: TextStyle(color: SisoColors.body, fontSize: 13)),
+                    child: Text(
+                        hideEnds && detail.route.isNotEmpty
+                            ? 'Đường chạy ngắn hơn 400 m nên đã ẩn hết'
+                            : 'Không có Đường chạy để hiển thị',
+                        style: const TextStyle(color: SisoColors.body, fontSize: 13)),
                   )
                 : FlutterMap(
                     options: MapOptions(
@@ -232,10 +258,11 @@ class RunShareCard extends StatelessWidget {
                             borderColor: Colors.white,
                           ),
                       ]),
-                      CircleLayer(circles: [
-                        _dot(points.first, SisoColors.successText),
-                        _dot(points.last, SisoColors.danger),
-                      ]),
+                      if (!hideEnds)
+                        CircleLayer(circles: [
+                          _dot(points.first, SisoColors.successText),
+                          _dot(points.last, SisoColors.danger),
+                        ]),
                     ],
                   ),
           ),

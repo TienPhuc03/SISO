@@ -227,7 +227,8 @@ void main() {
       await resolve(tester, s, hutech);
 
       s.moves.add(uef);
-      await tester.pump();
+      await tester.pump(); // giao sự kiện của luồng
+      await tester.pump(); // vẽ lại chấm vị trí
 
       final marker = tester.widget<MarkerLayer>(find.byType(MarkerLayer)).markers.single;
       expect(marker.point, uef);
