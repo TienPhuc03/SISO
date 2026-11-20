@@ -6,12 +6,17 @@ import 'package:latlong2/latlong.dart';
 /// Lấy vị trí hiện tại của người dùng để căn camera bản đồ.
 abstract class UserLocationSource {
   /// Vị trí hiện tại, hoặc `null` khi tắt định vị, bị từ chối quyền, hết thời gian hay lỗi.
+  /// [requestPermission] = false: chưa có quyền thì trả `null` ngay, không hiện hộp thoại xin quyền.
   /// Không bao giờ ném lỗi.
-  Future<LatLng?> currentPosition();
+  Future<LatLng?> currentPosition({bool requestPermission = true});
 
   /// Vị trí gần nhất máy còn nhớ (trả ngay, có thể cũ), để căn camera tức thì khi mở bản đồ.
   /// `null` khi không có, chưa có quyền, trên web, hay lỗi. Không xin quyền, không bao giờ ném lỗi.
   Future<LatLng?> lastKnownPosition();
+
+  /// Vị trí mới mỗi khi người dùng di chuyển. Chỉ gọi sau khi [currentPosition] đã trả vị trí
+  /// (tức là đã có quyền). Lỗi bị bỏ qua, không bao giờ ném lỗi.
+  Stream<LatLng> positionStream();
 }
 
 /// Bản dùng Geolocator (CoreLocation trên iOS). Xin quyền "khi dùng app" nếu chưa có.
@@ -21,12 +26,12 @@ class GeolocatorLocationSource implements UserLocationSource {
   final Duration timeLimit;
 
   @override
-  Future<LatLng?> currentPosition() async {
+  Future<LatLng?> currentPosition({bool requestPermission = true}) async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return null;
 
       var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
+      if (permission == LocationPermission.denied && requestPermission) {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.denied ||
@@ -60,6 +65,13 @@ class GeolocatorLocationSource implements UserLocationSource {
       return null;
     }
   }
+
+  @override
+  Stream<LatLng> positionStream() => Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
+      )
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .handleError((Object _) {});
 }
 
 final userLocationSourceProvider =

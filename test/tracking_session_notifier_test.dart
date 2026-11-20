@@ -11,6 +11,7 @@ import 'package:siso_project/src/features/tracking/providers/tracking_session_no
 class FakeSource implements TelemetryWindowSource {
   final speed = StreamController<double>.broadcast();
   final win = StreamController<TelemetryWindow>.broadcast();
+  final pos = StreamController<GpsFix>.broadcast();
   int starts = 0;
   int stops = 0;
 
@@ -18,6 +19,8 @@ class FakeSource implements TelemetryWindowSource {
   Stream<double> get speedMps => speed.stream;
   @override
   Stream<TelemetryWindow> get windows => win.stream;
+  @override
+  Stream<GpsFix> get positions => pos.stream;
   @override
   void start() => starts++;
   @override
@@ -131,6 +134,23 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(notifier.state.speedKmh, closeTo(10.8, 0.01));
+  });
+
+  test('Đường chạy: nối điểm GPS tốt, bỏ điểm sai số âm hoặc > 20 m, Phiên mới bắt đầu lại', () async {
+    GpsFix fix(double lat, double accuracy) => GpsFix(lat: lat, lng: 106.7, timestampMs: 0, accuracy: accuracy);
+    notifier.startRun();
+    source.pos
+      ..add(fix(10.80, 5))
+      ..add(fix(10.81, -1))
+      ..add(fix(10.82, 35))
+      ..add(fix(10.83, 8));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifier.state.route.map((p) => p.latitude), [10.80, 10.83]);
+
+    await notifier.stopRun();
+    notifier.startRun();
+    expect(notifier.state.route, isEmpty);
   });
 
   test('cửa sổ qua: cập nhật Nhịp bước và nhớ sessionId cho cửa sổ sau', () async {

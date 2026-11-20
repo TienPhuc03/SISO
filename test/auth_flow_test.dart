@@ -19,7 +19,7 @@ const student = AuthUser(
   displayName: 'sv',
   university: hutech,
 );
-const mapTitle = 'SISO — Đại Chiến Bình Thạnh';
+const mapTitle = 'SISO';
 
 /// Repository giả: kịch bản trả lời do từng test đặt.
 class FakeAuthRepository implements AuthRepository {
@@ -99,7 +99,7 @@ void main() {
   group('AuthGate', () {
     testWidgets('chưa đăng nhập: hiện LoginScreen', (tester) async {
       await pumpApp(tester);
-      expect(find.text('SISO - Xác thực Sinh viên'), findsOneWidget);
+      expect(find.text('Chạy cho trường của bạn'), findsOneWidget);
       expect(find.text(mapTitle), findsNothing);
     });
 
@@ -108,7 +108,7 @@ void main() {
       repo.restoreError = StateError('storage hỏng');
       await pumpApp(tester);
       expect(find.byKey(const Key('auth_checking')), findsNothing);
-      expect(find.text('SISO - Xác thực Sinh viên'), findsOneWidget);
+      expect(find.text('Chạy cho trường của bạn'), findsOneWidget);
     });
 
     testWidgets('còn phiên đã lưu: vào thẳng bản đồ', (tester) async {
@@ -140,7 +140,7 @@ void main() {
       await goToVerify(tester);
 
       expect(repo.otpRequests, ['sv@hutech.edu.vn']);
-      expect(find.text('Nhập mã OTP'), findsOneWidget);
+      expect(find.byKey(const Key('verify_otp')), findsOneWidget);
       expect(find.text(hutech.name), findsOneWidget);
       expect(find.textContaining('sv@hutech.edu.vn'), findsOneWidget);
     });
@@ -155,7 +155,7 @@ void main() {
 
       expect(find.text('Vui lòng đợi 40 giây trước khi gửi lại mã OTP.'),
           findsOneWidget);
-      expect(find.text('Nhập mã OTP'), findsNothing);
+      expect(find.byKey(const Key('verify_otp')), findsNothing);
     });
   });
 
@@ -173,12 +173,12 @@ void main() {
       await goToVerify(tester);
       await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(find.text('SISO - Xác thực Sinh viên'), findsOneWidget);
+      expect(find.text('Chạy cho trường của bạn'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Nhập mã OTP'), findsOneWidget);
+      expect(find.byKey(const Key('verify_otp')), findsOneWidget);
       expect(repo.otpRequests, ['sv@hutech.edu.vn']);
     });
 
@@ -270,7 +270,7 @@ void main() {
 
       expect(repo.verifyAttempts, ['123456']);
       expect(find.text(mapTitle), findsOneWidget);
-      expect(find.text('Nhập mã OTP'), findsNothing);
+      expect(find.byKey(const Key('verify_otp')), findsNothing);
       expect(find.byType(BackButton), findsNothing);
     });
 
@@ -309,7 +309,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repo.logoutCalls, 1);
-      expect(find.text('SISO - Xác thực Sinh viên'), findsOneWidget);
+      expect(find.text('Chạy cho trường của bạn'), findsOneWidget);
     });
 
     testWidgets('bấm Huỷ: vẫn ở bản đồ', (tester) async {
@@ -336,7 +336,7 @@ void main() {
       await container.read(authSessionProvider.notifier).logout();
       await tester.pumpAndSettle();
 
-      expect(find.text('SISO - Xác thực Sinh viên'), findsOneWidget);
+      expect(find.text('Chạy cho trường của bạn'), findsOneWidget);
     });
   });
 }

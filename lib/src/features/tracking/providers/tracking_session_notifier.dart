@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/errors/siso_exceptions.dart';
 import '../data/device_telemetry_source.dart';
@@ -32,6 +33,7 @@ class RunState {
     this.addedKm,
     this.errorCode,
     this.errorMessage,
+    this.route = const [],
   });
 
   final TrackingStatus status;
@@ -58,6 +60,9 @@ class RunState {
   final String? errorCode;
   final String? errorMessage;
 
+  /// Đường chạy đã đi trong Phiên này (điểm GPS sai số ≤ 20 m), để bản đồ vẽ và bám theo.
+  final List<LatLng> route;
+
   RunState copyWith({
     TrackingStatus? status,
     String? sessionId,
@@ -69,6 +74,7 @@ class RunState {
     double? addedKm,
     String? errorCode,
     String? errorMessage,
+    List<LatLng>? route,
   }) =>
       RunState(
         status: status ?? this.status,
@@ -81,6 +87,7 @@ class RunState {
         addedKm: addedKm ?? this.addedKm,
         errorCode: errorCode ?? this.errorCode,
         errorMessage: errorMessage ?? this.errorMessage,
+        route: route ?? this.route,
       );
 }
 
@@ -98,6 +105,7 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
   final TelemetryRepository _repository;
   StreamSubscription<double>? _speedSub;
   StreamSubscription<TelemetryWindow>? _windowSub;
+  StreamSubscription<GpsFix>? _positionSub;
 
   /// Hàng đợi gửi tuần tự: mỗi cửa sổ cần sessionId do cửa sổ trước trả về.
   Future<void> _pending = Future.value();
@@ -118,6 +126,11 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
     _speedSub = _source.speedMps.listen((mps) {
       if (mounted && state.status == TrackingStatus.tracking) {
         state = state.copyWith(speedKmh: mps * 3.6);
+      }
+    });
+    _positionSub = _source.positions.listen((fix) {
+      if (mounted && state.status == TrackingStatus.tracking && fix.trusted) {
+        state = state.copyWith(route: [...state.route, LatLng(fix.lat, fix.lng)]);
       }
     });
     _windowSub = _source.windows.listen(
@@ -221,8 +234,10 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
   void _cancelSubscriptions() {
     _speedSub?.cancel();
     _windowSub?.cancel();
+    _positionSub?.cancel();
     _speedSub = null;
     _windowSub = null;
+    _positionSub = null;
   }
 
   @override

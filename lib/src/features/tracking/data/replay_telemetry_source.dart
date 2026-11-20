@@ -47,7 +47,16 @@ TelemetryWindow buildWindow(List<AccelRecord> chunk, List<GpsRecord> gps, {requi
     averageSpeedMps: avgSpeed,
     horizontalAccuracy: accuracy,
     isMocked: inWindow.any((g) => g.isMocked),
+    // Chỉ điểm nằm trong cửa sổ: server trả ERR_206 nếu điểm lệch quá 1 s ra ngoài.
+    gpsPoints: capGpsPoints([
+      for (final g in gps)
+        if (g.tMs >= t0 && g.tMs <= t1) g.toFix(baseEpochMs),
+    ]),
   );
+}
+
+extension on GpsRecord {
+  GpsFix toFix(int baseEpochMs) => GpsFix(lat: lat, lng: lng, timestampMs: baseEpochMs + tMs, accuracy: accuracyM);
 }
 
 /// Cắt log thành các cửa sổ 256 mẫu liên tiếp, không chồng nhau (bỏ phần lẻ cuối log).
@@ -91,7 +100,9 @@ class ReplayTelemetrySource implements TelemetryWindowSource {
 
   final _speedController = StreamController<double>.broadcast();
   final _windowController = StreamController<TelemetryWindow>.broadcast();
+  final _positionController = StreamController<GpsFix>.broadcast();
   Timer? _timer;
+  int _baseEpochMs = 0;
   List<ReplayWindow> _windows = const [];
   int _nextWindow = 0;
   int _nextGps = 0;
@@ -103,6 +114,9 @@ class ReplayTelemetrySource implements TelemetryWindowSource {
 
   @override
   Stream<TelemetryWindow> get windows => _windowController.stream;
+
+  @override
+  Stream<GpsFix> get positions => _positionController.stream;
 
   /// Số cửa sổ đầy đủ trong log.
   int get windowCount => buildReplayWindows(log, baseEpochMs: 0).length;
@@ -116,7 +130,8 @@ class ReplayTelemetrySource implements TelemetryWindowSource {
   @override
   void start() {
     stop();
-    _windows = buildReplayWindows(log, baseEpochMs: _clock().millisecondsSinceEpoch);
+    _baseEpochMs = _clock().millisecondsSinceEpoch;
+    _windows = buildReplayWindows(log, baseEpochMs: _baseEpochMs);
     _nextWindow = 0;
     _nextGps = 0;
     _logicalMs = 0;
@@ -136,6 +151,7 @@ class ReplayTelemetrySource implements TelemetryWindowSource {
     while (_nextGps < log.gps.length && log.gps[_nextGps].tMs <= _logicalMs) {
       final speed = log.gps[_nextGps].speedMps;
       if (speed >= 0) _speedController.add(speed);
+      _positionController.add(log.gps[_nextGps].toFix(_baseEpochMs));
       _nextGps++;
     }
     while (_nextWindow < _windows.length && _windows[_nextWindow].endTMs <= _logicalMs) {
@@ -152,5 +168,6 @@ class ReplayTelemetrySource implements TelemetryWindowSource {
     stop();
     _speedController.close();
     _windowController.close();
+    _positionController.close();
   }
 }

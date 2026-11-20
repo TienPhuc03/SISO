@@ -1,5 +1,5 @@
 -- ============================================================================
--- SISO — TỰ ĐỘNG HOÁ MÙA GIẢI VÀ HAO MÒN (MODULE 8, SRS FR-08 / BR06 / MỤC 20-21)
+-- SISO — TỰ ĐỘNG HOÁ MÙA GIẢI, HAO MÒN VÀ ĐÓNG PHIÊN BỎ DỞ (MODULE 8, SRS FR-08 / BR06 / MỤC 20-21)
 --
 -- Chạy file này RIÊNG trong Supabase SQL Editor, sau init_schema.sql. Chạy lại an toàn.
 -- Đừng chạy lại init_schema.sql chỉ để có phần này: file đó ghi đè ranh giới Đấu trường.
@@ -137,8 +137,60 @@ BEGIN
 END;
 $$;
 
+-- ----------------------------------------------------------------------------
+-- Phiên bỏ dở: app bị tắt giữa chừng thì Phiên chạy kẹt ACTIVE mãi. Không có cửa sổ mới
+-- quá p_idle (mặc định 30 phút) thì kết thúc như POST /telemetry/finish: cộng km đã kiểm định
+-- cho Sinh viên và trường, chuyển COMPLETED. Km đã qua kiểm định từng cửa sổ nên cộng là công bằng.
+-- GIỮ KHỚP với TelemetryService.finishSession (km = distance_meters / 1000).
+-- SKIP LOCKED: Phiên đang được finish / claim-loop khoá thì bỏ qua, lần sau xét lại (đã COMPLETED
+-- thì không còn ACTIVE), nên km không bao giờ bị cộng hai lần.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION private.finish_stale_sessions(p_idle interval DEFAULT interval '30 minutes')
+RETURNS jsonb
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+    v_closed int;
+BEGIN
+    WITH stale AS (
+        SELECT id, user_id, distance_meters / 1000.0 AS km
+        FROM public.running_sessions
+        WHERE status = 'ACTIVE'
+          AND COALESCE(updated_at, created_at) < now() - p_idle
+        FOR UPDATE SKIP LOCKED
+    ), closed AS (
+        UPDATE public.running_sessions s
+        SET status = 'COMPLETED', finished_at = now(), updated_at = now()
+        FROM stale
+        WHERE s.id = stale.id
+        RETURNING stale.user_id, stale.km
+    ), per_user AS (
+        SELECT user_id, sum(km) AS km, count(*) AS sessions FROM closed GROUP BY user_id
+    ), credited_users AS (
+        UPDATE public.users u
+        SET personal_km = u.personal_km + p.km
+        FROM per_user p
+        WHERE u.id = p.user_id
+        RETURNING u.university_id, p.km
+    ), credited_universities AS (
+        UPDATE public.universities un
+        SET total_season_km = un.total_season_km + x.km
+        FROM (SELECT university_id, sum(km) AS km FROM credited_users
+              WHERE university_id IS NOT NULL GROUP BY university_id) x
+        WHERE un.id = x.university_id
+        RETURNING un.id
+    )
+    -- CTE ghi dữ liệu luôn chạy dù không được SELECT tới.
+    SELECT COALESCE(sum(sessions), 0) INTO v_closed FROM per_user;
+
+    RETURN jsonb_build_object('closed', v_closed);
+END;
+$$;
+
 REVOKE ALL ON FUNCTION private.close_finished_season(boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.decay_hexagons() FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.finish_stale_sessions(interval) FROM PUBLIC;
 
 -- ----------------------------------------------------------------------------
 -- Lịch chạy. pg_cron trên Supabase dùng giờ UTC: 17:00 UTC = 00:00 Việt Nam (UTC+7).
@@ -151,6 +203,8 @@ BEGIN
                               'SELECT private.close_finished_season();');
         PERFORM cron.schedule('siso_decay_hexagons', '0 * * * *',
                               'SELECT private.decay_hexagons();');
+        PERFORM cron.schedule('siso_finish_stale_sessions', '*/5 * * * *',
+                              'SELECT private.finish_stale_sessions();');
     ELSE
         RAISE NOTICE 'pg_cron chưa được bật: bỏ qua việc đặt lịch (các hàm vẫn dùng được).';
     END IF;

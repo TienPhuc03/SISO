@@ -22,6 +22,7 @@ class DeviceTelemetrySource implements TelemetryWindowSource {
 
   final _speedController = StreamController<double>.broadcast();
   final _windowController = StreamController<TelemetryWindow>.broadcast();
+  final _positionController = StreamController<GpsFix>.broadcast();
   final _accel = <AccelRecord>[];
   final _gps = <GpsRecord>[];
   StreamSubscription<AccelReading>? _accelSub;
@@ -35,6 +36,9 @@ class DeviceTelemetrySource implements TelemetryWindowSource {
 
   @override
   Stream<TelemetryWindow> get windows => _windowController.stream;
+
+  @override
+  Stream<GpsFix> get positions => _positionController.stream;
 
   @override
   void start() {
@@ -79,6 +83,12 @@ class DeviceTelemetrySource implements TelemetryWindowSource {
       isMocked: g.isMocked,
     ));
     if (g.speedMps >= 0) _speedController.add(g.speedMps);
+    _positionController.add(GpsFix(
+      lat: g.lat,
+      lng: g.lng,
+      timestampMs: g.timestamp.millisecondsSinceEpoch,
+      accuracy: g.accuracyM,
+    ));
   }
 
   void _onAccel(AccelReading a) {
@@ -97,5 +107,6 @@ class DeviceTelemetrySource implements TelemetryWindowSource {
     stop();
     _speedController.close();
     _windowController.close();
+    _positionController.close();
   }
 }

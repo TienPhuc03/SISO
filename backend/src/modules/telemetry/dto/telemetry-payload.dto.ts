@@ -9,6 +9,7 @@ import {
   IsUUID,
   IsInt,
   Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -32,6 +33,32 @@ export class ImuSampleDto {
   @ApiProperty({ example: 1762300000000, description: 'Thời điểm lấy mẫu (epoch, mili giây)' })
   @IsNumber()
   timestamp: number;
+}
+
+/** Số điểm GPS tối đa một cửa sổ: GPS ~1 Hz cho ~5 điểm / 5,12 s, chừa dư cho máy báo nhanh hơn. */
+export const MAX_GPS_POINTS_PER_WINDOW = 20;
+
+export class GpsPointDto {
+  @ApiProperty({ example: 10.8013, description: 'Vĩ độ (độ)' })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat: number;
+
+  @ApiProperty({ example: 106.7142, description: 'Kinh độ (độ)' })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng: number;
+
+  @ApiProperty({ example: 1762300000000, description: 'Thời điểm lấy điểm (epoch, mili giây), nằm trong cửa sổ' })
+  @IsNumber()
+  timestamp: number;
+
+  // Không chặn số âm: iOS trả -1 khi chưa có tín hiệu, giống horizontalAccuracy.
+  @ApiProperty({ example: 6.5, description: 'Sai số ngang của điểm (m)' })
+  @IsNumber()
+  accuracy: number;
 }
 
 export class TelemetryPayloadDto {
@@ -78,4 +105,15 @@ export class TelemetryPayloadDto {
   @ValidateNested({ each: true })
   @Type(() => ImuSampleDto)
   imuSamples: ImuSampleDto[];
+
+  @ApiPropertyOptional({
+    type: [GpsPointDto],
+    description: `Vệt GPS trong cửa sổ (tối đa ${MAX_GPS_POINTS_PER_WINDOW} điểm) để vẽ Đường chạy. Bỏ trống thì cửa sổ không có vệt.`,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_GPS_POINTS_PER_WINDOW)
+  @ValidateNested({ each: true })
+  @Type(() => GpsPointDto)
+  gpsPoints?: GpsPointDto[];
 }

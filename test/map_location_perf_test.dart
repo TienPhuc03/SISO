@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -24,9 +25,13 @@ class FakeLocationSource implements UserLocationSource {
   LatLng? position;
   int calls = 0;
 
+  /// Giá trị requestPermission của từng lần gọi.
+  final requested = <bool>[];
+
   @override
-  Future<LatLng?> currentPosition() async {
+  Future<LatLng?> currentPosition({bool requestPermission = true}) async {
     calls++;
+    requested.add(requestPermission);
     return position;
   }
 
@@ -35,6 +40,11 @@ class FakeLocationSource implements UserLocationSource {
 
   @override
   Future<LatLng?> lastKnownPosition() async => lastKnown;
+
+  final moves = StreamController<LatLng>.broadcast();
+
+  @override
+  Stream<LatLng> positionStream() => moves.stream;
 }
 
 /// Tile nền giả: ảnh PNG trong suốt 1x1, không gọi mạng.
@@ -196,6 +206,8 @@ void main() {
 
       expect(location.calls, 2);
       expect(find.textContaining('Không lấy được vị trí'), findsOneWidget);
+      // Mở Bản đồ không bật hộp thoại xin quyền vị trí; chỉ khi chính Sinh viên bấm nút mới xin.
+      expect(location.requested, [false, true]);
     });
 
     testWidgets('ở ngoài khu thi đấu: bấm nút thì báo ngoài khu', (tester) async {

@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SISO cần quyền thêm ảnh để lưu ảnh Phiên chạy của bạn vào thư viện ảnh.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SISO cần quyền chọn ảnh để đặt ảnh đại diện cho hồ sơ của bạn.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SISO cần quyền truy cập vị trí GPS để ghi nhận lộ trình chạy bộ và chiếm ô lục giác H3 cho trường của bạn.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

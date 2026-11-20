@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/core/network/api_client.dart';
 import 'src/core/network/socket_manager.dart';
+import 'src/core/theme/siso_theme.dart';
 import 'src/features/auth/presentation/auth_gate.dart';
 
 Future<void> main() async {
@@ -31,7 +32,7 @@ class SisoApp extends StatelessWidget {
     return MaterialApp(
       title: 'SISO - Step In Step Out',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true),
+      theme: buildSisoTheme(),
       home: const AuthGate(),
     );
   }
