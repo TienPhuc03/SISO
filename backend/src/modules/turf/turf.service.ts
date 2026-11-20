@@ -6,6 +6,8 @@ import { H3Hexagon } from '../../entities/h3-hexagon.entity';
 import { University } from '../../entities/university.entity';
 import { User } from '../../entities/user.entity';
 import { RunningSession } from '../../entities/running-session.entity';
+import { SessionWindow } from '../../entities/session-window.entity';
+import { MAX_GPS_ACCURACY_M } from '../telemetry/anti-gigo.service';
 import { H3Service, H3_RESOLUTION } from './h3.service';
 import { TurfGateway } from '../realtime/turf.gateway';
 import { ClaimLoopDto } from './dto/claim-loop.dto';
@@ -17,6 +19,9 @@ export const NEUTRAL_HEX_COLOR = '#44FFFFFF';
 
 /** Khung bao khu thi đấu Bình Thạnh; khớp PlayArea phía client. */
 export const PLAY_AREA = { minLat: 10.755, maxLat: 10.83, minLng: 106.695, maxLng: 106.745 };
+
+/** Ô biên được lệch tối đa bấy nhiêu vòng ô so với ô có điểm GPS (bù sai số GPS ~20 m và điểm thưa ~1 Hz). */
+export const ROUTE_MATCH_RING = 1;
 
 const arenaNotFound = () =>
   new NotFoundException({ code: 'ERR_303', message: 'ARENA_NOT_FOUND: Không tìm thấy Đấu trường.' });
@@ -115,6 +120,9 @@ export class TurfService {
         lock: { mode: 'pessimistic_write' },
       });
       this.assertClaimable(session);
+      // Đọc vệt sau khi khoá Phiên chạy: không còn cửa sổ nào ghi thêm vào giữa lúc đối chiếu.
+      const windows = await tx.find(SessionWindow, { where: { session_id: session.id } });
+      this.assertBoundaryOnRoute(dto.boundaryH3Indexes, windows);
 
       // Sắp xếp để hai Vòng khép chồng ô luôn khoá ô theo cùng thứ tự, tránh deadlock.
       await tx.query(UPSERT_CLAIMED_HEXES_SQL, [
@@ -132,6 +140,7 @@ export class TurfService {
         status: 'COMPLETED',
         session_type: 'ARENA_LOOP',
         hex_count: claimedHexIndexes.length,
+        finished_at: new Date(),
       });
       return km;
     });
@@ -157,7 +166,6 @@ export class TurfService {
   /**
    * Mọi ô chiếm (biên + bên trong) phải nằm trong Đấu trường `arenaId` (tâm ô trong ranh giới, cùng cách
    * seed), hoặc trong khu thi đấu nếu không gửi `arenaId` / Đấu trường chưa có ranh giới.
-   * shortcut: chưa đối chiếu biên với vệt GPS thật của Phiên chạy (server chưa lưu vệt); làm khi có lưu vệt.
    */
   private async assertInsideArena(cells: string[], arenaId?: string): Promise<void> {
     let inside = (cell: string) => {
@@ -178,6 +186,25 @@ export class TurfService {
         message: arenaId
           ? 'OUT_OF_ARENA: Vòng chạy có ô nằm ngoài Đấu trường.'
           : 'OUT_OF_ARENA: Vòng chạy có ô nằm ngoài khu thi đấu Bình Thạnh.',
+      });
+    }
+  }
+
+  /**
+   * Mọi ô biên phải nằm trong ROUTE_MATCH_RING vòng ô quanh một điểm GPS đáng tin của Phiên chạy.
+   * Lúc Tạm dừng không có cửa sổ nên không có điểm: biên vắt qua quãng đi xe sẽ không khớp.
+   */
+  private assertBoundaryOnRoute(boundary: string[], windows: Pick<SessionWindow, 'gps_points'>[]): void {
+    const nearRoute = new Set(
+      windows
+        .flatMap((w) => w.gps_points)
+        .filter((p) => p.accuracy >= 0 && p.accuracy <= MAX_GPS_ACCURACY_M)
+        .flatMap((p) => h3.gridDisk(h3.latLngToCell(p.lat, p.lng, H3_RESOLUTION), ROUTE_MATCH_RING)),
+    );
+    if (!boundary.every((cell) => nearRoute.has(cell))) {
+      throw new BadRequestException({
+        code: 'ERR_305',
+        message: 'ROUTE_MISMATCH: Đường biên vòng khép không khớp vệt GPS của Phiên chạy.',
       });
     }
   }
