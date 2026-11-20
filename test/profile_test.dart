@@ -81,7 +81,53 @@ class _FakeProfileRepository extends ProfileRepository {
       );
 }
 
+/// Đường thẳng về phía bắc, mỗi điểm cách nhau ~[stepMeters] m.
+List<LatLng> northLine(int points, {double stepMeters = 50, double startLat = 10.8}) => [
+      for (var i = 0; i < points; i++) LatLng(startLat + i * stepMeters / 111195, 106.7),
+    ];
+
 void main() {
+  group('hideRouteEnds: ẩn 200 m đầu và cuối khi Sinh viên bật công tắc', () {
+    test('đường 1 km: chỉ giữ phần giữa, cách hai đầu ít nhất 200 m', () {
+      final line = northLine(21); // 0..1000 m
+      final kept = hideRouteEnds([line]);
+
+      const d = Distance(roundResult: false);
+      expect(kept.single, isNotEmpty);
+      expect(d.distance(line.first, kept.single.first), greaterThanOrEqualTo(200));
+      expect(d.distance(kept.single.last, line.last), greaterThanOrEqualTo(200));
+    });
+
+    test('đường ngắn hơn 400 m: không còn gì để vẽ', () {
+      expect(hideRouteEnds([northLine(7)]), isEmpty); // 300 m
+    });
+
+    test('giữ ranh giới giữa các đoạn (không nối qua chỗ Tạm dừng)', () {
+      final a = northLine(11); // 0..500 m
+      final b = northLine(11, startLat: a.last.latitude + 100 / 111195); // 600..1100 m
+      expect(hideRouteEnds([a, b]), hasLength(2));
+    });
+  });
+
+  testWidgets('thẻ bật ẩn với Đường chạy 300 m: báo đã ẩn hết thay vì vẽ bản đồ', (tester) async {
+    final detail = RunDetail(
+      summary: RunSummary(
+        sessionId: 's1',
+        status: 'COMPLETED',
+        sessionType: 'FREE_RUN',
+        distanceMeters: 300,
+        durationSeconds: 100,
+        hexCount: 0,
+        startedAt: DateTime(2026, 11, 20),
+      ),
+      windows: const [],
+      route: [northLine(7)],
+    );
+    await tester.pumpWidget(MaterialApp(home: SingleChildScrollView(child: RunShareCard(detail: detail, hideEnds: true))));
+
+    expect(find.text('Đường chạy ngắn hơn 400 m nên đã ẩn hết'), findsOneWidget);
+  });
+
   group('RunDetail.fromJson', () {
     test('GeoJSON [lng, lat] đổi đúng sang LatLng; đếm Cửa sổ hợp lệ; Nhịp bước TB bỏ Cửa sổ không đo được', () {
       final d = RunDetail.fromJson({
@@ -155,6 +201,9 @@ void main() {
     });
 
     testWidgets('bấm một Phiên chạy: mở chi tiết với số liệu và nút Xuất ảnh', (tester) async {
+      // Công tắc ẩn nằm dưới thẻ: cần màn hình cao hơn khung test mặc định 800×600.
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await pump(tester, const ProfileScreen());
 
       await tester.tap(find.byKey(const Key('run_s1')));
@@ -168,6 +217,8 @@ void main() {
         find.ancestor(of: find.text('Xuất ảnh'), matching: find.bySubtype<ButtonStyleButton>()),
       );
       expect(export.onPressed, isNotNull);
+      final toggle = tester.widget<SwitchListTile>(find.byKey(const Key('hide_route_ends')));
+      expect(toggle.value, isFalse, reason: 'mặc định hiện đủ Đường chạy');
 
       await tester.tap(find.text('Xuất ảnh'));
       await tester.pumpAndSettle();
