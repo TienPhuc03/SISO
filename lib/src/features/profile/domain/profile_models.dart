@@ -132,3 +132,33 @@ class RunDetail {
     );
   }
 }
+
+/// Bỏ [meters] đầu và cuối Đường chạy để ảnh chia sẻ không lộ nơi xuất phát / kết thúc (ký túc xá, nhà trọ).
+/// Đoạn còn dưới 2 điểm bị bỏ; Đường chạy ngắn hơn 2 × [meters] thì không còn gì.
+List<List<LatLng>> hideRouteEnds(List<List<LatLng>> segments, {double meters = 200}) {
+  const distance = Distance(roundResult: false);
+  final points = [
+    for (var s = 0; s < segments.length; s++)
+      for (final p in segments[s]) (s, p),
+  ];
+  if (points.isEmpty) return const [];
+
+  final travelled = List<double>.filled(points.length, 0);
+  for (var i = 1; i < points.length; i++) {
+    travelled[i] = travelled[i - 1] + distance.distance(points[i - 1].$2, points[i].$2);
+  }
+  final total = travelled.last;
+
+  final kept = <List<LatLng>>[];
+  int? lastSegment;
+  for (var i = 0; i < points.length; i++) {
+    if (travelled[i] < meters || travelled[i] > total - meters) continue;
+    final (segment, point) = points[i];
+    if (segment != lastSegment) {
+      kept.add([]);
+      lastSegment = segment;
+    }
+    kept.last.add(point);
+  }
+  return [for (final s in kept) if (s.length >= 2) s];
+}

@@ -304,6 +304,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Chạy'));
     await tester.pumpAndSettle();
-    expect(find.text('Phiên Chạy Đang Diễn Ra'), findsOneWidget);
+    expect(find.text('Bắt đầu'), findsOneWidget);
   });
 }
