@@ -478,16 +478,14 @@ DROP POLICY IF EXISTS "Users read own sessions" ON public.running_sessions;
 CREATE POLICY "Users read own sessions" ON public.running_sessions
     FOR SELECT USING (auth.uid() = user_id);
 
+-- KHÔNG cho client tự INSERT: Phiên chạy chèn thẳng qua REST sẽ né Anti-GIGO, và
+-- finish_stale_sessions() sẽ cộng distance_meters bịa vào km. Chỉ backend (BYPASSRLS) ghi.
 DROP POLICY IF EXISTS "Users insert own sessions" ON public.running_sessions;
-CREATE POLICY "Users insert own sessions" ON public.running_sessions
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- gigo_audit_logs có user_id + detected_at_h3 (ai bị loại, ở đâu): không cho đọc công khai, chỉ backend đọc.
 DROP POLICY IF EXISTS "Public read gigo logs for stats" ON public.gigo_audit_logs;
 
-DROP POLICY IF EXISTS "Users insert own gigo logs" ON public.gigo_audit_logs;
-CREATE POLICY "Users insert own gigo logs" ON public.gigo_audit_logs
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users insert own gigo logs" ON public.gigo_audit_logs;  -- chỉ backend ghi
 
 -- ============================================================================
 -- 10. BẬT SUPABASE REALTIME CHO BẢN ĐỒ LỤC GIÁC & ĐIỂM SỐ TRƯỜNG

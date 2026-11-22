@@ -38,6 +38,9 @@ class SisoErrorCodes {
   /// ERR_206: Điểm GPS nằm ngoài thời gian của cửa sổ cảm biến; chỉ bỏ cửa sổ đó, Phiên chạy tiếp tục
   static const String invalidGpsPoints = 'ERR_206';
 
+  /// ERR_207: Cửa sổ đến sớm hơn thời gian thật của Phiên chạy (gửi dồn); chỉ bỏ cửa sổ đó, Phiên chạy tiếp tục
+  static const String windowTooEarly = 'ERR_207';
+
   /// ERR_301: Diện tích vòng khép vượt giới hạn 150 ô H3
   static const String loopTooLarge = 'ERR_301';
 

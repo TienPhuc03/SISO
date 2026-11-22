@@ -115,7 +115,20 @@ class _ActiveRunScreenState extends ConsumerState<ActiveRunScreen> {
     }
 
     final running = run.status == TrackingStatus.tracking || run.status == TrackingStatus.evaluatingLoop;
-    return Scaffold(
+    // Rời màn khi đang chạy sẽ huỷ Phiên chạy (provider autoDispose): chặn Back lỡ tay, bắt bấm Dừng.
+    // Đăng xuất (AuthGate gọi popUntil) không bị chặn vì Navigator.pop không hỏi PopScope.
+    return PopScope(
+      canPop: !running,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            key: Key('run_back_blocked'),
+            content: Text('Đang chạy: bấm Dừng để kết thúc Phiên chạy trước khi thoát.'),
+          ));
+      },
+      child: Scaffold(
       body: LayoutBuilder(
         builder: (context, constraints) {
           final mapHeight = constraints.maxHeight * (running ? 0.48 : 0.55);
@@ -170,6 +183,7 @@ class _ActiveRunScreenState extends ConsumerState<ActiveRunScreen> {
             ],
           );
         },
+      ),
       ),
     );
   }

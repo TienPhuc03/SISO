@@ -7,6 +7,7 @@ import { TurfModule } from './modules/turf/turf.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
 import { ProfileModule } from './modules/profile/profile.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 import { University } from './entities/university.entity';
 import { User } from './entities/user.entity';
@@ -67,6 +68,7 @@ import { UserAvatar } from './entities/user-avatar.entity';
     RealtimeModule,
     LeaderboardModule,
     ProfileModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
