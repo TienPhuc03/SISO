@@ -32,6 +32,15 @@ class HexagonRepository {
     SocketManager.onHexClaimed(onClaimed);
   }
 
+  /// Gọi [onConnected] mỗi lần socket kết nối (lại) được tới server.
+  void subscribeConnected(Function(dynamic event) onConnected) {
+    SocketManager.onConnected(onConnected);
+  }
+
+  void unsubscribeConnected(Function(dynamic event) onConnected) {
+    SocketManager.offConnected(onConnected);
+  }
+
   /// Ngừng lắng nghe: truyền đúng callback đã đưa vào [subscribeHexClaimed].
   void unsubscribeHexClaimed(Function(dynamic event) onClaimed) {
     SocketManager.offHexClaimed(onClaimed);

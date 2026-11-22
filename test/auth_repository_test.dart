@@ -278,6 +278,21 @@ void main() {
       expect(ApiClient.accessToken, token);
     });
 
+    test('/me trả token mới: lưu và dùng token đó (gia hạn phiên)', () async {
+      storage.values[AuthRepository.tokenKey] = fakeJwt(now.add(const Duration(hours: 1)));
+      final renewed = fakeJwt(now.add(const Duration(days: 7)));
+      final repo = repoWith((_) => jsonBody(200, {
+            'success': true,
+            'message': 'ok',
+            'data': {'user': userJson, 'accessToken': renewed},
+          }));
+
+      await repo.restoreSession();
+
+      expect(storage.values[AuthRepository.tokenKey], renewed);
+      expect(ApiClient.accessToken, renewed);
+    });
+
     test('/me trả 401: null và xoá token', () async {
       storage.values[AuthRepository.tokenKey] =
           fakeJwt(now.add(const Duration(days: 3)));
@@ -311,11 +326,21 @@ void main() {
       expect(storage.values, isEmpty);
     });
 
-    test('lỗi 4xx khác 401 (vd 404 do sai API_BASE_URL): đăng nhập lại', () async {
+    test('lỗi 4xx khác 401/403 (vd 404 do sai API_BASE_URL): giữ token, dùng hồ sơ đã lưu', () async {
       storage.values[AuthRepository.tokenKey] =
           fakeJwt(now.add(const Duration(days: 3)));
       storage.values[AuthRepository.userKey] = jsonEncode(userJson);
       final repo = repoWith((_) => jsonBody(404, {'message': 'Not Found'}));
+
+      expect((await repo.restoreSession())?.id, 'u1');
+      expect(storage.values[AuthRepository.tokenKey], isNotNull);
+    });
+
+    test('/me trả 403: null và xoá token', () async {
+      storage.values[AuthRepository.tokenKey] =
+          fakeJwt(now.add(const Duration(days: 3)));
+      storage.values[AuthRepository.userKey] = jsonEncode(userJson);
+      final repo = repoWith((_) => jsonBody(403, {'message': 'Forbidden'}));
 
       expect(await repo.restoreSession(), isNull);
       expect(storage.values, isEmpty);

@@ -395,6 +395,53 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('đang chạy: Back không rời màn Chạy (Phiên chạy sẽ bị huỷ), dừng rồi mới quay lại được',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final log = makeLog(600, [for (var t = 0; t <= 12000; t += 1000) gpsAt(t, spd: 3.2)]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          replayLogAssetsProvider.overrideWith((ref) async => ['${telemetryLogAssetDir}siso_run_a.jsonl']),
+          replayLogLoaderProvider.overrideWithValue((String path, [AssetBundle? bundle]) async => log),
+          telemetryRepositoryProvider.overrideWithValue(_RecordingRepository()),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ActiveRunScreen())),
+              child: const Text('mở màn Chạy'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('mở màn Chạy'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Phát lại log'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('siso_run_a.jsonl'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+    await tester.pump();
+    // Như vuốt/nút Back của hệ điều hành
+    await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
+    await tester.pump();
+    expect(find.byType(ActiveRunScreen), findsOneWidget);
+    expect(find.byKey(const Key('run_back_blocked')), findsOneWidget);
+
+    // "Kết thúc" chỉ là nhãn dưới nút tròn: dừng qua notifier như nút Dừng
+    await ProviderScope.containerOf(tester.element(find.byType(ActiveRunScreen)))
+        .read(trackingSessionNotifierProvider.notifier)
+        .stopRun();
+    await tester.pump();
+    await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
+    await tester.pumpAndSettle();
+    expect(find.byType(ActiveRunScreen), findsNothing);
+  });
+
   testWidgets('bản phát hành (không debug, không SISO_DEMO): ẩn bộ chọn và bảng giả lập, luôn dùng cảm biến thật',
       (tester) async {
     await tester.pumpWidget(

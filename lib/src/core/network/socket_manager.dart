@@ -36,6 +36,15 @@ class SocketManager {
     _socket?.off('hex_claimed', callback);
   }
 
+  /// Mỗi lần kết nối (lại) thành công: dùng để tải lại dữ liệu đã lỡ trong lúc mất kết nối.
+  static void onConnected(Function(dynamic) callback) {
+    _socket?.on('connect', callback);
+  }
+
+  static void offConnected(Function(dynamic) callback) {
+    _socket?.off('connect', callback);
+  }
+
   static void disconnect() {
     _socket?.disconnect();
   }

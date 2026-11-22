@@ -34,8 +34,11 @@ class ApiClient {
           return handler.next(options);
         },
         onError: (error, handler) {
-          final sentToken = error.requestOptions.headers['Authorization'] != null;
-          if (error.response?.statusCode == 401 && sentToken) {
+          // Chỉ đăng xuất khi 401 là của token hiện tại: request gửi bằng token cũ (trước khi
+          // đăng nhập lại) về muộn không được đá phiên mới ra.
+          final sentCurrentToken = _accessToken != null &&
+              error.requestOptions.headers['Authorization'] == 'Bearer $_accessToken';
+          if (error.response?.statusCode == 401 && sentCurrentToken) {
             onUnauthorized?.call();
           }
           return handler.next(error);

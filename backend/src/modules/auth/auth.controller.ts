@@ -40,7 +40,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Thông tin tài khoản của JWT hiện tại' })
-  @ApiResponse({ status: 200, description: 'Token hợp lệ, trả về user và trường' })
+  @ApiResponse({ status: 200, description: 'Token hợp lệ, trả về user, trường và accessToken mới (gia hạn phiên)' })
   @ApiResponse({ status: 401, description: 'Token thiếu, sai hoặc hết hạn' })
   async me(@Request() req) {
     return this.authService.getMe(req.user.userId);

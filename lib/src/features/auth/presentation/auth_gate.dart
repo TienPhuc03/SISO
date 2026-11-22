@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/push/push_notifier.dart';
 import '../../../core/theme/siso_theme.dart';
 import '../../map/presentation/map_screen.dart';
 import '../providers/auth_provider.dart';
@@ -12,6 +13,8 @@ class AuthGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Giữ PushNotifier sống suốt app: nó tự đăng ký/huỷ topic FCM theo phiên đăng nhập.
+    ref.listen<String?>(pushNotifierProvider, (_, __) {});
     // Bị đăng xuất (bấm Đăng xuất hoặc API trả 401) khi đang ở màn con -> về route đầu
     ref.listen<AuthSession>(authSessionProvider, (previous, next) {
       if (previous is AuthSignedIn && next is AuthSignedOut) {

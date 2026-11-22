@@ -57,7 +57,11 @@ supabase/.temp
 node_modules/
 backend/node_modules/
 backend/.env
+# Khoá service account Firebase (bí mật, KHÔNG commit)
+backend/firebase-service-account*.json
 backend/dist/
 dist/
 
 .claude/settings.local.json
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist

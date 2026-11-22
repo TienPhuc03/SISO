@@ -117,22 +117,16 @@ export class AuthService {
     // Xoá OTP sau khi tạo/tìm user thành công: lỗi DB thì người dùng vẫn thử lại được bằng mã cũ
     await this.otpStore.delete(email);
 
-    const accessToken = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-      universityId: user.university_id,
-      // role 'authenticated' để Supabase RLS nhận diện user
-      role: 'authenticated',
-      displayName: user.display_name,
-    });
-
     return BaseResponseDto.ok('Đăng nhập thành công.', {
-      accessToken,
+      accessToken: this.signToken(user),
       user: this.toUserView(user, university),
     });
   }
 
-  /** Thông tin user của JWT hiện tại (AuthGate gọi khi mở app). */
+  /**
+   * Thông tin user của JWT hiện tại (AuthGate gọi khi mở app), kèm token mới để gia hạn phiên:
+   * mở app thì token có lại đủ hạn, không hết hạn giữa chừng khi đang chạy rồi bị đá về Login.
+   */
   async getMe(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -145,7 +139,19 @@ export class AuthService {
       });
     }
     return BaseResponseDto.ok('Lấy thông tin tài khoản thành công.', {
+      accessToken: this.signToken(user),
       user: this.toUserView(user, user.university),
+    });
+  }
+
+  /** JWT hạn theo JWT_EXPIRES_IN (mặc định 7 ngày). */
+  private signToken(user: User): string {
+    return this.jwtService.sign({
+      sub: user.id,
+      email: user.email,
+      universityId: user.university_id,
+      // Không có claim `role`: token này không dùng được với Supabase REST dù JWT_SECRET có trùng.
+      displayName: user.display_name,
     });
   }
 

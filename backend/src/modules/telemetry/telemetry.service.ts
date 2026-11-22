@@ -33,6 +33,12 @@ export const MAX_CONSECUTIVE_BIOMETRIC_FAILURES = 2;
 export const GPS_POINT_WINDOW_TOLERANCE_MS = 1000;
 
 /**
+ * Thời lượng server đã cộng cho Phiên chạy không được vượt thời gian thật kể từ lúc tạo Phiên quá
+ * bấy nhiêu ms (bù cửa sổ đầu ghi trước khi có Phiên, và độ trễ mạng). Chặn gửi dồn cửa sổ để cày km.
+ */
+export const WALL_CLOCK_SLACK_MS = 15_000;
+
+/**
  * Kiểm định Phiên chạy theo từng cửa sổ 256 mẫu (Module 4).
  *
  * - Cửa sổ đầu tiên (không có sessionId) qua Cổng Động học thì tạo Phiên chạy ACTIVE và trả sessionId.
@@ -165,6 +171,16 @@ export class TelemetryService {
 
     // Tầng 2: Cổng Sinh trắc. Một cửa sổ lẻ không qua chỉ là cảnh báo.
     const biometric = this.antiGigoService.validateBiometrics(dto.averageSpeedMps, dto.imuSamples);
+
+    // Cửa sổ đến sớm hơn thời gian thật (phát lại log nhanh, tool gửi dồn): chỉ bỏ cửa sổ, không cộng km.
+    if (existing && !this.allowFastReplay && !this.withinWallClock(existing, biometric.analysis.windowSeconds)) {
+      return {
+        rejection: new BadRequestException({
+          code: 'ERR_207',
+          message: 'WINDOW_TOO_EARLY: Cửa sổ cảm biến đến sớm hơn thời gian thật của Phiên chạy, không được cộng.',
+        }),
+      };
+    }
     session.consecutive_biometric_failures = biometric.isValid
       ? 0
       : session.consecutive_biometric_failures + 1;
@@ -291,6 +307,17 @@ export class TelemetryService {
       startedAt: s.created_at,
       finishedAt: s.finished_at ?? null,
     };
+  }
+
+  /** Thời lượng sau khi cộng cửa sổ này vẫn không vượt thời gian thật kể từ lúc tạo Phiên (+ WALL_CLOCK_SLACK_MS). */
+  private withinWallClock(session: RunningSession, windowSeconds: number): boolean {
+    const elapsedMs = Date.now() - new Date(session.created_at).getTime();
+    return (session.duration_seconds + windowSeconds) * 1000 <= elapsedMs + WALL_CLOCK_SLACK_MS;
+  }
+
+  /** Chỉ bật trên máy dev để phát lại log IMU nhanh 10x (TELEMETRY_ALLOW_FAST_REPLAY=true). */
+  private get allowFastReplay(): boolean {
+    return this.config.get<string>('TELEMETRY_ALLOW_FAST_REPLAY') === 'true';
   }
 
   private signingKeyOf(sessionId: string): string {

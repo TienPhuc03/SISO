@@ -273,6 +273,22 @@ void main() {
     expect(notifier.state.gpsSearching, isFalse);
   });
 
+  for (final code in ['ERR_206', 'ERR_207']) {
+    test('server trả $code (chỉ bỏ cửa sổ): Phiên chạy tiếp tục, không dừng nguồn', () async {
+      repo.responses.addAll([_ok(key: 'k1'), SisoException(code: code, message: 'x'), _ok()]);
+      notifier.startRun();
+
+      await sendWindow();
+      await sendWindow();
+      expect(notifier.state.status, TrackingStatus.tracking);
+      expect(notifier.state.errorCode, isNull);
+      expect(source.stops, 0);
+
+      await sendWindow();
+      expect(repo.calls, ['verify', 'verify', 'verify']);
+    });
+  }
+
   test('dừng chạy khi chưa có Phiên chạy: tắt nguồn dữ liệu, về idle, không gọi finish', () async {
     notifier.startRun();
     await notifier.stopRun();
