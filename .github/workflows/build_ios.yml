@@ -43,6 +43,26 @@ jobs:
           fi
           grep -E '^(API_BASE_URL|SOCKET_URL)=' .env
 
+      # Xcode khai báo ios/Runner/GoogleService-Info.plist (FCM) nhưng file bị gitignore: thiếu là build lỗi.
+      # Đặt Secret GOOGLE_SERVICE_INFO_PLIST (nội dung file mã hoá base64) tại: GitHub repo -> Settings ->
+      # Secrets and variables -> Actions -> tab Secrets.
+      - name: Prepare Firebase Configuration (GoogleService-Info.plist)
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -z "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "::error::Chưa đặt Secret GOOGLE_SERVICE_INFO_PLIST (base64 của GoogleService-Info.plist), Xcode không build được khi thiếu file này."
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
+          # Plist của app Firebase khác (sai Bundle ID) vẫn build được nhưng không nhận thông báo: chặn sớm.
+          bundle_id=$(plutil -extract BUNDLE_ID raw ios/Runner/GoogleService-Info.plist)
+          if [ "$bundle_id" != "vn.edu.siso.sisoProject" ]; then
+            echo "::error::GoogleService-Info.plist có BUNDLE_ID '$bundle_id', cần 'vn.edu.siso.sisoProject'."
+            exit 1
+          fi
+          echo "Đã tạo GoogleService-Info.plist cho $bundle_id"
+
       - name: Install Dependencies
         run: flutter pub get
 
