@@ -23,9 +23,18 @@ export class User {
   @Column({ nullable: true })
   university_id: string;
 
+  @Column({ length: 10, default: 'user' })
+  role: UserRole;
+
+  /** Hết hạn cấm chơi; null = không bị cấm. Cấm vĩnh viễn = năm 9999. */
+  @Column({ type: 'timestamptz', nullable: true })
+  banned_until: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 
   @OneToMany(() => RunningSession, (session) => session.user)
   sessions: RunningSession[];
 }
+
+export type UserRole = 'user' | 'admin';

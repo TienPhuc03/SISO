@@ -10,6 +10,10 @@ export class University {
   @Column({ unique: true, length: 20 })
   short_code: string;
 
+  /** Tên cũ của short_code; view xếp hạng và app đọc cột này trước, nên luôn ghi bằng short_code. */
+  @Column({ length: 20, nullable: true })
+  short_name: string | null;
+
   @Column({ length: 100 })
   name: string;
 

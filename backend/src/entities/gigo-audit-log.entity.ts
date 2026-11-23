@@ -46,6 +46,17 @@ export class GigoAuditLog {
   @Column({ length: 15, nullable: true })
   detected_at_h3: string;
 
+  @Column({ length: 20, default: 'pending' })
+  review_status: GigoReviewStatus;
+
+  @Column({ type: 'uuid', nullable: true })
+  reviewed_by: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  reviewed_at: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 }
+
+export type GigoReviewStatus = 'pending' | 'confirmed_cheat' | 'false_positive';
