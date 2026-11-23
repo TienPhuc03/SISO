@@ -4,6 +4,7 @@ import { TurfService } from './turf.service';
 import { ClaimLoopDto } from './dto/claim-loop.dto';
 import { ArenaListResponseDto, HexagonListResponseDto } from './dto/turf-response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { NotBannedGuard } from '../../common/guards/account.guards';
 import { BaseResponseDto } from '../../common/dto/base-response.dto';
 
 @ApiTags('Turf')
@@ -29,11 +30,12 @@ export class TurfController {
   }
 
   @Post('claim-loop')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, NotBannedGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Bao vây khép vòng và chiếm ô lục giác H3 cho trường' })
   @ApiResponse({ status: 200, description: 'Chiếm đất thành công và kích hoạt WebSocket' })
   @ApiResponse({ status: 400, description: 'ERR_301: Vòng lặp quá lớn (> 150 ô); ERR_302: đường biên tự cắt / sai thứ tự / chưa khép (ô cuối không liền kề ô đầu); ERR_304: có ô ngoài Đấu trường (hoặc ngoài khu thi đấu nếu không gửi arenaId); ERR_305: có ô biên không nằm trên vệt GPS của Phiên chạy; hoặc mã loại của Phiên chạy đã bị loại' })
+  @ApiResponse({ status: 403, description: 'ERR_106: tài khoản đang bị khoá' })
   @ApiResponse({ status: 404, description: 'ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc đã dùng; ERR_303: arenaId không tồn tại' })
   async claimLoop(@Request() req, @Body() dto: ClaimLoopDto) {
     const { message, ...result } = await this.turfService.claimLoop(req.user.userId, dto);

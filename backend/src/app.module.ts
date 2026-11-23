@@ -8,6 +8,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
 import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 import { University } from './entities/university.entity';
 import { User } from './entities/user.entity';
@@ -19,6 +20,7 @@ import { HallOfFame } from './entities/hall-of-fame.entity';
 import { GigoAuditLog } from './entities/gigo-audit-log.entity';
 import { SessionWindow } from './entities/session-window.entity';
 import { UserAvatar } from './entities/user-avatar.entity';
+import { AdminAction } from './entities/admin-action.entity';
 
 @Module({
   imports: [
@@ -54,6 +56,7 @@ import { UserAvatar } from './entities/user-avatar.entity';
             GigoAuditLog,
             SessionWindow,
             UserAvatar,
+            AdminAction,
           ],
           synchronize: false,
           logging: configService.get<string>('NODE_ENV') === 'development',
@@ -69,6 +72,7 @@ import { UserAvatar } from './entities/user-avatar.entity';
     LeaderboardModule,
     ProfileModule,
     NotificationsModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

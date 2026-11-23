@@ -425,6 +425,12 @@ BEGIN
     ORDER BY length(email_domain) DESC
     LIMIT 1;
 
+    -- Admin (cấp bằng SQL, xem mục 11) được dùng email ngoài trường và không thuộc Trường nào.
+    IF uni_id IS NULL AND NEW.role = 'admin' THEN
+        NEW.university_id := NULL;
+        RETURN NEW;
+    END IF;
+
     IF uni_id IS NULL THEN
         RAISE EXCEPTION 'ERR_INVALID_CAMPUS_DOMAIN: Tên miền % không thuộc 5 trường Bình Thạnh.', domain_part;
     END IF;
@@ -506,3 +512,46 @@ BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.universities;
     END IF;
 END $$;
+
+-- ============================================================================
+-- 11. WEB ADMIN: VAI TRÒ, CẤM CHƠI, DUYỆT NHẬT KÝ GIGO, NHẬT KÝ THAO TÁC ADMIN
+-- Cấp admin (chạy tay). Email trường đã đăng nhập app:  UPDATE public.users SET role = 'admin' WHERE email = '<email>';
+-- Email thường (gmail...), tạo sẵn tài khoản admin không thuộc Trường nào:
+--   INSERT INTO public.users (email, display_name, role) VALUES (lower('<email>'), 'Admin', 'admin')
+--   ON CONFLICT (email) DO UPDATE SET role = 'admin';
+-- ============================================================================
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role VARCHAR(10) NOT NULL DEFAULT 'user';
+-- NULL = không bị cấm; cấm vĩnh viễn ghi năm 9999 (TypeORM không đọc được 'infinity').
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS banned_until TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE public.gigo_audit_logs ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) NOT NULL DEFAULT 'pending';
+ALTER TABLE public.gigo_audit_logs ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.gigo_audit_logs ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
+        ALTER TABLE public.users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'gigo_review_status_check') THEN
+        ALTER TABLE public.gigo_audit_logs ADD CONSTRAINT gigo_review_status_check
+            CHECK (review_status IN ('pending', 'confirmed_cheat', 'false_positive'));
+    END IF;
+END $$;
+
+-- Thống kê của admin lọc/gom theo thời gian.
+CREATE INDEX IF NOT EXISTS idx_gigo_created ON public.gigo_audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_created ON public.running_sessions(created_at);
+
+CREATE TABLE IF NOT EXISTS public.admin_actions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    action VARCHAR(50) NOT NULL,           -- vd. user.ban, gigo.review, season.update
+    target_type VARCHAR(30) NOT NULL,      -- user | gigo_log | season | university | arena
+    target_id VARCHAR(64),
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_actions_target ON public.admin_actions(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_admin_actions_created ON public.admin_actions(created_at DESC);
+ALTER TABLE public.admin_actions ENABLE ROW LEVEL SECURITY;  -- không policy: chỉ backend đọc/ghi

@@ -272,9 +272,14 @@ export class TelemetryService {
     return rows.map((s) => this.toSummary(s));
   }
 
-  /** Chi tiết một Phiên chạy: tổng, chuỗi cửa sổ, Đường chạy. Phiên của người khác trả 404 như không tồn tại. */
-  async getSession(userId: string, sessionId: string): Promise<SessionDetailDto> {
-    const session = await this.sessionRepository.findOne({ where: { id: sessionId, user_id: userId } });
+  /**
+   * Chi tiết một Phiên chạy: tổng, chuỗi cửa sổ, Đường chạy. Phiên của người khác trả 404 như không tồn tại.
+   * `userId = null` chỉ dành cho admin: xem Phiên chạy của bất kỳ ai.
+   */
+  async getSession(userId: string | null, sessionId: string): Promise<SessionDetailDto> {
+    const session = await this.sessionRepository.findOne({
+      where: userId === null ? { id: sessionId } : { id: sessionId, user_id: userId },
+    });
     if (!session) {
       throw new NotFoundException({ code: 'ERR_204', message: 'SESSION_NOT_FOUND: Không tìm thấy Phiên chạy.' });
     }

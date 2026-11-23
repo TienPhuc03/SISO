@@ -5,6 +5,7 @@ import { TelemetryController } from './telemetry.controller';
 import { TelemetryService } from './telemetry.service';
 import { IMU_WINDOW_SIZE } from './dto/telemetry-payload.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { NotBannedGuard } from '../../common/guards/account.guards';
 
 describe('TelemetryController: truyền body thô để kiểm chữ ký', () => {
   let app: INestApplication;
@@ -17,6 +18,8 @@ describe('TelemetryController: truyền body thô để kiểm chữ ký', () =>
       controllers: [TelemetryController],
       providers: [{ provide: TelemetryService, useValue: { verifyWindow, listSessions, getSession } }],
     })
+      .overrideGuard(NotBannedGuard)
+      .useValue({ canActivate: () => true })
       .overrideGuard(JwtAuthGuard)
       .useValue({
         canActivate: (ctx) => {

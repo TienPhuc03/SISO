@@ -36,6 +36,7 @@ async function bootstrap() {
     .addTag('Telemetry', 'Kiểm định Anti-GIGO (Kinematic & Biometric FFT)')
     .addTag('Turf', 'Bản đồ lục giác H3 & Chiếm đất khép vòng')
     .addTag('Leaderboard', 'Bộ đếm song song: % Đất & % Km Toàn cầu')
+    .addTag('Admin', 'Web admin: chống gian lận, bản đồ, thống kê, quản lý (role = admin)')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

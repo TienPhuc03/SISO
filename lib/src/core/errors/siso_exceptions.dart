@@ -35,6 +35,9 @@ class SisoErrorCodes {
   /// ERR_105: Sinh viên chưa có ảnh đại diện (GET /api/v1/profile/avatar/:userId)
   static const String avatarNotFound = 'ERR_105';
 
+  /// ERR_106: Tài khoản đang bị admin khoá; không gửi telemetry / kết thúc Phiên chạy được (HTTP 403)
+  static const String accountBanned = 'ERR_106';
+
   /// ERR_206: Điểm GPS nằm ngoài thời gian của cửa sổ cảm biến; chỉ bỏ cửa sổ đó, Phiên chạy tiếp tục
   static const String invalidGpsPoints = 'ERR_206';
 
