@@ -87,6 +87,7 @@ class _ActiveRunScreenState extends ConsumerState<ActiveRunScreen> {
   void _tick() {
     if (!mounted) return;
     final run = ref.read(trackingSessionNotifierProvider);
+    if (run.paused) return; // Tạm dừng: không tính thời gian, quãng đường, Nhịp bước
     setState(() {
       _seconds++;
       if (!run.gpsSearching) _km += run.speedKmh / 3600;
@@ -208,7 +209,11 @@ class _ActiveRunScreenState extends ConsumerState<ActiveRunScreen> {
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 12.5, height: 1.45, color: SisoColors.body),
       ),
-      if (run.errorCode != null) ...[
+      if (run.errorCode == pauseTimeoutCode) ...[
+        // Không phải lỗi: Phiên tự kết thúc vì Tạm dừng quá lâu.
+        const SizedBox(height: 12),
+        _Banner.info(Icons.timer_off_outlined, run.errorMessage ?? ''),
+      ] else if (run.errorCode != null) ...[
         const SizedBox(height: 12),
         _Banner.error('[${run.errorCode}] ${runErrorText(run.errorCode!, run.errorMessage ?? '')}'),
       ],
@@ -263,33 +268,67 @@ class _ActiveRunScreenState extends ConsumerState<ActiveRunScreen> {
       ),
       const SizedBox(height: 8),
       Text(
-        'Tốc độ hiện tại ${viDecimal(run.speedKmh)} km/h · Nhịp bước cập nhật mỗi ~5 giây',
+        switch (run) {
+          RunState(paused: false) => 'Tốc độ hiện tại ${viDecimal(run.speedKmh)} km/h · Nhịp bước cập nhật mỗi ~5 giây',
+          RunState(autoPaused: true) =>
+            'Tự tạm dừng vì bạn đang đứng yên, chạy lại là tự tiếp tục. Không tính thời gian và quãng đường lúc này.',
+          _ => 'Đã tạm dừng: không tính thời gian và quãng đường. Tạm dừng quá 30 phút Phiên chạy sẽ tự kết thúc.',
+        },
         textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 11, color: SisoColors.caption),
       ),
+      if (run.paused && run.pauseExpiring)
+        _Banner.warning('Bạn đã tạm dừng 25 phút. Phiên chạy sẽ tự kết thúc sau 5 phút nữa nếu không chạy tiếp.'),
       if (run.windowWarning)
         _Banner.warning('Nhịp bước không khớp tốc độ. Thêm một lần nữa Phiên chạy sẽ bị loại.'),
       if (run.gpsSearching)
         _Banner.info(Icons.satellite_alt_outlined, 'Đang tìm tín hiệu vệ tinh... Quãng đường lúc này chưa được tính.'),
       if (run.connectionIssue) _Banner.info(Icons.wifi_off, 'Mất kết nối, cửa sổ vừa rồi chưa được kiểm định.'),
       const SizedBox(height: 14),
-      Center(
-        child: _RoundAction(
-          size: 76,
-          color: SisoColors.card,
-          borderColor: SisoColors.danger,
-          onPressed: notifier.stopRun,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(color: SisoColors.danger, borderRadius: BorderRadius.circular(5)),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          run.paused
+              ? _LabeledAction(
+                  key: const Key('run_resume'),
+                  label: 'Tiếp tục',
+                  labelColor: SisoColors.primary,
+                  button: _RoundAction(
+                    size: 76,
+                    color: SisoColors.primary,
+                    onPressed: notifier.resumeRun,
+                    child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 44),
+                  ),
+                )
+              : _LabeledAction(
+                  key: const Key('run_pause'),
+                  label: 'Tạm dừng',
+                  labelColor: SisoColors.ink,
+                  button: _RoundAction(
+                    size: 76,
+                    color: SisoColors.card,
+                    borderColor: SisoColors.ink,
+                    onPressed: notifier.pauseRun,
+                    child: const Icon(Icons.pause_rounded, color: SisoColors.ink, size: 40),
+                  ),
+                ),
+          _LabeledAction(
+            key: const Key('run_stop'),
+            label: 'Kết thúc',
+            labelColor: SisoColors.danger,
+            button: _RoundAction(
+              size: 76,
+              color: SisoColors.card,
+              borderColor: SisoColors.danger,
+              onPressed: notifier.stopRun,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(color: SisoColors.danger, borderRadius: BorderRadius.circular(5)),
+              ),
+            ),
           ),
-        ),
-      ),
-      const SizedBox(height: 6),
-      const Center(
-        child: Text('Kết thúc',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SisoColors.danger)),
+        ],
       ),
     ];
   }
@@ -298,12 +337,6 @@ class _ActiveRunScreenState extends ConsumerState<ActiveRunScreen> {
     final source = ref.watch(telemetryWindowSourceProvider);
     final allowFakeSources = ref.watch(allowFakeSourcesProvider);
     return [
-      if (run.sessionId != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 16),
-          child: Text('Phiên chạy: ${run.sessionId}',
-              textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: SisoColors.caption)),
-        ),
       if (allowFakeSources) ...[
         const SizedBox(height: 16),
         TelemetrySourcePicker(enabled: run.status != TrackingStatus.tracking),
@@ -450,7 +483,9 @@ class _StatusPill extends StatelessWidget {
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                item(SisoColors.recording, 'Đang ghi', bold: true),
+                run.paused
+                    ? item(SisoColors.caption, run.autoPaused ? 'Tự tạm dừng' : 'Tạm dừng', bold: true)
+                    : item(SisoColors.recording, 'Đang ghi', bold: true),
                 Container(width: 1, height: 12, margin: const EdgeInsets.symmetric(horizontal: 12), color: SisoColors.border),
                 run.gpsSearching
                     ? item(SisoColors.gpsSearching, 'Đang tìm GPS')
@@ -506,6 +541,28 @@ class _VDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(width: 1, height: 36, color: SisoColors.border);
+}
+
+/// Nút tròn kèm nhãn bên dưới; key đặt ở đây để test tìm cả cụm.
+class _LabeledAction extends StatelessWidget {
+  const _LabeledAction({super.key, required this.button, required this.label, required this.labelColor});
+
+  final Widget button;
+  final String label;
+  final Color labelColor;
+
+  @override
+  Widget build(BuildContext context) => MergeSemantics(
+        // Trình đọc màn hình đọc nút kèm nhãn ("Tạm dừng, nút") thay vì một nút không tên.
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            button,
+            const SizedBox(height: 6),
+            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: labelColor)),
+          ],
+        ),
+      );
 }
 
 class _RoundAction extends StatelessWidget {

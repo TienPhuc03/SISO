@@ -53,7 +53,7 @@ Vệt GPS thật của một Phiên chạy, ghép từ các Cửa sổ, tách th
 _Tránh dùng_: Track, Polyline, Lộ trình
 
 **Tạm dừng** (`Pause`):
-Khoảng Sinh viên ngừng chạy giữa Phiên chạy mà không kết thúc; không gửi Cửa sổ, nên không cộng thời gian, quãng đường hay Đường chạy.
+Khoảng Sinh viên ngừng chạy giữa Phiên chạy mà không kết thúc; không gửi Cửa sổ, nên không cộng thời gian, quãng đường hay Đường chạy. Sinh viên bấm Tạm dừng (chỉ Tiếp tục khi bấm), hoặc app **Tự tạm dừng** khi đứng yên (tự Tiếp tục khi chạy lại). Tạm dừng 25 phút thì app nhắc; 30 phút không chạy tiếp thì app tự kết thúc Phiên chạy.
 _Tránh dùng_: Nghỉ, Dừng (vì Dừng là kết thúc Phiên chạy)
 
 **Phiên bỏ dở** (`Abandoned Run`):
