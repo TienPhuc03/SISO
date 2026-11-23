@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import { randomInt, timingSafeEqual } from 'crypto';
 
-import { User } from '../../entities/user.entity';
+import { User, UserRole } from '../../entities/user.entity';
 import { University } from '../../entities/university.entity';
 import { BaseResponseDto } from '../../common/dto/base-response.dto';
 import { matchCampusDomain, normalizeEmail } from './campus-domain';
@@ -25,7 +25,9 @@ export interface AuthUserView {
   id: string;
   email: string;
   displayName: string;
-  university: { id: string; shortCode: string; name: string; color: string };
+  role: UserRole;
+  /** null = admin đăng nhập bằng email ngoài trường. */
+  university: { id: string; shortCode: string; name: string; color: string } | null;
 }
 
 @Injectable()
@@ -40,10 +42,10 @@ export class AuthService {
     @Inject(OTP_STORE) private readonly otpStore: OtpStore,
   ) {}
 
-  /** Bước 1: kiểm tra đuôi email trường, sinh OTP và gửi về hộp thư. */
+  /** Bước 1: kiểm tra email (đuôi email trường, hoặc admin đã được cấp sẵn), sinh OTP và gửi về hộp thư. */
   async requestEduLogin(rawEmail: string) {
     const email = normalizeEmail(rawEmail);
-    const university = await this.findUniversityByEmail(email);
+    const { university } = await this.resolveAccount(email);
 
     const now = Date.now();
     const existing = await this.otpStore.get(email);
@@ -77,7 +79,7 @@ export class AuthService {
       email,
       expiresInSeconds: OTP_TTL_MS / 1000,
       resendAfterSeconds: OTP_RESEND_COOLDOWN_MS / 1000,
-      university: this.toUniversityView(university),
+      university: university ? this.toUniversityView(university) : null,
     });
   }
 
@@ -112,8 +114,8 @@ export class AuthService {
       });
     }
 
-    const university = await this.findUniversityByEmail(email);
-    const user = await this.findOrCreateUser(email, university);
+    const { university, admin } = await this.resolveAccount(email);
+    const user = admin ?? (await this.findOrCreateUser(email, university!));
     // Xoá OTP sau khi tạo/tìm user thành công: lỗi DB thì người dùng vẫn thử lại được bằng mã cũ
     await this.otpStore.delete(email);
 
@@ -132,7 +134,7 @@ export class AuthService {
       where: { id: userId },
       relations: ['university'],
     });
-    if (!user || !user.university) {
+    if (!user || (!user.university && user.role !== 'admin')) {
       throw new UnauthorizedException({
         code: 'HTTP_401',
         message: 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.',
@@ -140,7 +142,7 @@ export class AuthService {
     }
     return BaseResponseDto.ok('Lấy thông tin tài khoản thành công.', {
       accessToken: this.signToken(user),
-      user: this.toUserView(user, user.university),
+      user: this.toUserView(user, user.university ?? null),
     });
   }
 
@@ -155,25 +157,23 @@ export class AuthService {
     });
   }
 
-  private async findUniversityByEmail(email: string): Promise<University> {
-    const domain = matchCampusDomain(email);
-    if (!domain) {
-      throw new BadRequestException({
-        code: 'ERR_101',
-        message:
-          'Email không thuộc danh sách trường đại học hợp lệ tại Bình Thạnh (HUTECH, UEF, UTH, FTU2, HIU).',
-      });
-    }
-    const university = await this.universityRepository.findOne({
-      where: { email_domain: domain },
+  /**
+   * Email trường -> Trường của nó (đuôi email đọc từ bảng universities, không ghi cứng).
+   * Email khác chỉ hợp lệ khi đã có tài khoản role = 'admin' (cấp bằng SQL): không ai tự đăng ký bằng email thường được.
+   */
+  private async resolveAccount(email: string): Promise<{ university: University | null; admin?: User }> {
+    const universities = await this.universityRepository.find();
+    const domain = matchCampusDomain(email, universities.map((u) => u.email_domain));
+    const university = universities.find((u) => u.email_domain === domain);
+    if (university) return { university };
+
+    const admin = await this.userRepository.findOne({ where: { email, role: 'admin' } });
+    if (admin) return { university: null, admin };
+
+    throw new BadRequestException({
+      code: 'ERR_101',
+      message: 'Email không thuộc trường đại học nào đang tham gia SISO.',
     });
-    if (!university) {
-      throw new BadRequestException({
-        code: 'ERR_101',
-        message: 'Không tìm thấy trường đại học tương ứng trong hệ thống.',
-      });
-    }
-    return university;
   }
 
   private async findOrCreateUser(email: string, university: University): Promise<User> {
@@ -220,12 +220,13 @@ export class AuthService {
     };
   }
 
-  private toUserView(user: User, university: University): AuthUserView {
+  private toUserView(user: User, university: University | null): AuthUserView {
     return {
       id: user.id,
       email: user.email,
       displayName: user.display_name,
-      university: this.toUniversityView(university),
+      role: user.role ?? 'user',
+      university: university ? this.toUniversityView(university) : null,
     };
   }
 }

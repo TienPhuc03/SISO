@@ -50,7 +50,7 @@ async function buildApp(users: Map<string, User>) {
     }),
   };
   const uniRepo = {
-    findOne: jest.fn(async ({ where }) => (where.email_domain === 'hutech.edu.vn' ? HUTECH : null)),
+    find: jest.fn(async () => [HUTECH]),
   };
 
   const moduleRef = await Test.createTestingModule({

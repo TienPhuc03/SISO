@@ -37,6 +37,8 @@ async function errorOf(promise: Promise<unknown>) {
 }
 
 describe('campus-domain: matchCampusDomain', () => {
+  const DOMAINS = ['hutech.edu.vn', 'uef.edu.vn', 'ut.edu.vn', 'ftu.edu.vn', 'hiu.vn'];
+
   it.each([
     ['a@hutech.edu.vn', 'hutech.edu.vn'],
     ['A@UEF.EDU.VN', 'uef.edu.vn'],
@@ -46,7 +48,7 @@ describe('campus-domain: matchCampusDomain', () => {
     ['e@st.hutech.edu.vn', 'hutech.edu.vn'],
     ['f@student.uef.edu.vn', 'uef.edu.vn'],
   ])('%s -> %s', (email, expected) => {
-    expect(matchCampusDomain(email)).toBe(expected);
+    expect(matchCampusDomain(email, DOMAINS)).toBe(expected);
   });
 
   it.each([
@@ -58,7 +60,11 @@ describe('campus-domain: matchCampusDomain', () => {
     '@hutech.edu.vn',
     'hutech.edu.vn',
   ])('từ chối %s', (email) => {
-    expect(matchCampusDomain(email)).toBeNull();
+    expect(matchCampusDomain(email, DOMAINS)).toBeNull();
+  });
+
+  it('domain lồng nhau: khớp domain dài nhất', () => {
+    expect(matchCampusDomain('a@st.uef.edu.vn', ['edu.vn', 'uef.edu.vn'])).toBe('uef.edu.vn');
   });
 });
 
@@ -68,7 +74,7 @@ describe('AuthService', () => {
   let mail: { devMode: boolean; sendOtp: jest.Mock };
   let users: Map<string, User>;
   let userRepo: { findOne: jest.Mock; create: jest.Mock; save: jest.Mock };
-  let uniRepo: { findOne: jest.Mock };
+  let uniRepo: { find: jest.Mock };
   let jwt: JwtService;
   let now: number;
 
@@ -79,8 +85,8 @@ describe('AuthService', () => {
     users = new Map();
     userRepo = {
       findOne: jest.fn(async ({ where, relations }) => {
-        const found = [...users.values()].find((u) =>
-          where.email ? u.email === where.email : u.id === where.id,
+        const found = [...users.values()].find(
+          (u) => (where.email ? u.email === where.email : u.id === where.id) && (!where.role || u.role === where.role),
         );
         if (!found) return null;
         return relations?.includes('university') && found.university_id === HUTECH.id
@@ -95,7 +101,7 @@ describe('AuthService', () => {
       }),
     };
     uniRepo = {
-      findOne: jest.fn(async ({ where }) => (where.email_domain === HUTECH.email_domain ? HUTECH : null)),
+      find: jest.fn(async () => [HUTECH]),
     };
     otpStore = new InMemoryOtpStore();
     mail = { devMode: false, sendOtp: jest.fn().mockResolvedValue(undefined) };
@@ -151,7 +157,7 @@ describe('AuthService', () => {
       expect(mail.sendOtp).not.toHaveBeenCalled();
     });
 
-    it('domain hợp lệ nhưng DB thiếu trường -> ERR_101', async () => {
+    it('trường không có trong DB -> ERR_101 (đuôi email đọc từ DB)', async () => {
       const { body } = await errorOf(service.requestEduLogin('a@uef.edu.vn'));
       expect(body.code).toBe('ERR_101');
     });
@@ -192,6 +198,7 @@ describe('AuthService', () => {
         id: created.id,
         email: EMAIL,
         displayName: 'nguyenvana',
+        role: 'user',
         university: { id: HUTECH.id, shortCode: 'HUTECH', name: HUTECH.name, color: '#FFCC00' },
       });
 
@@ -285,6 +292,35 @@ describe('AuthService', () => {
       now += 50_000;
       await service.requestEduLogin(EMAIL);
       expect((await service.verifyOtp(EMAIL, DEV_OTP)).success).toBe(true);
+    });
+  });
+
+  describe('admin dùng email ngoài trường', () => {
+    const GMAIL = 'quantri@gmail.com';
+
+    it('email thường chưa là admin -> ERR_101, không gửi mail, không tạo user', async () => {
+      users.set('g1', { id: 'g1', email: GMAIL, role: 'user' } as User);
+      const { body } = await errorOf(service.requestEduLogin(GMAIL));
+      expect(body.code).toBe('ERR_101');
+      expect(mail.sendOtp).not.toHaveBeenCalled();
+    });
+
+    it('admin cấp sẵn: nhận OTP, đăng nhập được, không gắn Trường, không tạo user mới', async () => {
+      users.set('a1', { id: 'a1', email: GMAIL, display_name: 'Quản trị', role: 'admin', university_id: null } as unknown as User);
+      const sent = await service.requestEduLogin(' QuanTri@Gmail.com ');
+      expect(sent.data!.university).toBeNull();
+
+      const res = await service.verifyOtp(GMAIL, await storedOtp(GMAIL));
+      expect(res.data!.user).toEqual({ id: 'a1', email: GMAIL, displayName: 'Quản trị', role: 'admin', university: null });
+      expect(users.size).toBe(1);
+      expect(jwt.verify(res.data!.accessToken, { secret: JWT_SECRET })).toMatchObject({ sub: 'a1' });
+    });
+
+    it('getMe: admin không có Trường vẫn hợp lệ; user thường không có Trường -> 401', async () => {
+      users.set('a1', { id: 'a1', email: GMAIL, display_name: 'Q', role: 'admin' } as User);
+      users.set('u2', { id: 'u2', email: 'x@gmail.com', display_name: 'X', role: 'user' } as User);
+      expect((await service.getMe('a1')).data!.user.university).toBeNull();
+      await expect(service.getMe('u2')).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
 
