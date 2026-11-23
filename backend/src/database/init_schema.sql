@@ -287,6 +287,12 @@ ALTER TABLE public.gigo_audit_logs ADD COLUMN IF NOT EXISTS imu_cadence_spm INT 
 ALTER TABLE public.gigo_audit_logs ADD COLUMN IF NOT EXISTS vertical_energy_g FLOAT;
 ALTER TABLE public.gigo_audit_logs ADD COLUMN IF NOT EXISTS gps_accuracy_m FLOAT;
 ALTER TABLE public.gigo_audit_logs ADD COLUMN IF NOT EXISTS detected_at_h3 VARCHAR(15);
+-- Cột của schema cũ còn sót trên DB đã có: violation_type NOT NULL làm mọi lần ghi nhật ký khi loại Phiên lỗi.
+ALTER TABLE public.gigo_audit_logs
+    DROP COLUMN IF EXISTS violation_type,
+    DROP COLUMN IF EXISTS gps_speed_mps,
+    DROP COLUMN IF EXISTS cadence_spm,
+    DROP COLUMN IF EXISTS fft_peak_freq;
 
 CREATE INDEX IF NOT EXISTS idx_gigo_user ON public.gigo_audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_gigo_type ON public.gigo_audit_logs(rejection_type);
@@ -457,8 +463,10 @@ CREATE POLICY "Public read arenas" ON public.arenas FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Public read h3_hexagons" ON public.h3_hexagons;
 CREATE POLICY "Public read h3_hexagons" ON public.h3_hexagons FOR SELECT USING (true);
 
+-- users có email: KHÔNG policy (giống session_windows), chỉ backend (role postgres, BYPASSRLS) đọc/ghi.
+-- Xếp hạng đọc v_campus_live_scores (không dùng users); client không gọi PostgREST.
 DROP POLICY IF EXISTS "Public read users leaderboard" ON public.users;
-CREATE POLICY "Public read users leaderboard" ON public.users FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users update own profile" ON public.users;
 
 DROP POLICY IF EXISTS "Public read seasons" ON public.seasons;
 CREATE POLICY "Public read seasons" ON public.seasons FOR SELECT USING (true);
@@ -466,25 +474,18 @@ CREATE POLICY "Public read seasons" ON public.seasons FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Public read hall_of_fame" ON public.hall_of_fame;
 CREATE POLICY "Public read hall_of_fame" ON public.hall_of_fame FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Users update own profile" ON public.users;
-CREATE POLICY "Users update own profile" ON public.users
-    FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
-
 DROP POLICY IF EXISTS "Users read own sessions" ON public.running_sessions;
 CREATE POLICY "Users read own sessions" ON public.running_sessions
     FOR SELECT USING (auth.uid() = user_id);
 
+-- KHÔNG cho client tự INSERT: Phiên chạy chèn thẳng qua REST sẽ né Anti-GIGO, và
+-- finish_stale_sessions() sẽ cộng distance_meters bịa vào km. Chỉ backend (BYPASSRLS) ghi.
 DROP POLICY IF EXISTS "Users insert own sessions" ON public.running_sessions;
-CREATE POLICY "Users insert own sessions" ON public.running_sessions
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+-- gigo_audit_logs có user_id + detected_at_h3 (ai bị loại, ở đâu): không cho đọc công khai, chỉ backend đọc.
 DROP POLICY IF EXISTS "Public read gigo logs for stats" ON public.gigo_audit_logs;
-CREATE POLICY "Public read gigo logs for stats" ON public.gigo_audit_logs
-    FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Users insert own gigo logs" ON public.gigo_audit_logs;
-CREATE POLICY "Users insert own gigo logs" ON public.gigo_audit_logs
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users insert own gigo logs" ON public.gigo_audit_logs;  -- chỉ backend ghi
 
 -- ============================================================================
 -- 10. BẬT SUPABASE REALTIME CHO BẢN ĐỒ LỤC GIÁC & ĐIỂM SỐ TRƯỜNG

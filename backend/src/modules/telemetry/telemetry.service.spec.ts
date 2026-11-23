@@ -39,6 +39,7 @@ function activeSession(overrides: Partial<RunningSession> = {}): RunningSession 
     is_valid: true,
     rejection_reason: null,
     hex_count: 0,
+    created_at: new Date(Date.now() - 10 * 60_000), // đã chạy 10 phút: đủ chỗ cho thời lượng 30 s
     ...overrides,
   } as RunningSession;
 }
@@ -102,7 +103,7 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
       new AntiGigoService(),
       sessions as unknown as Repository<RunningSession>,
       audits as unknown as Repository<GigoAuditLog>,
-      { getOrThrow: () => SECRET } as unknown as ConfigService,
+      { getOrThrow: () => SECRET, get: () => undefined } as unknown as ConfigService,
     );
   });
 
@@ -126,6 +127,42 @@ describe('TelemetryService: kiểm định Phiên chạy theo cửa sổ', () =>
     expect(saved.distance_meters).toBeCloseTo(100 + 3.2 * 5.12, 1);
     expect(saved.duration_seconds).toBe(35);
     expect(res.consecutiveFailures).toBe(0);
+  });
+
+  describe('không cộng quá thời gian thật (ERR_207)', () => {
+    it('gửi dồn: thời lượng đã cộng vượt thời gian kể từ lúc tạo Phiên + 15 s -> bỏ cửa sổ, không cộng km, không loại Phiên', async () => {
+      // Phiên tạo 40 s trước, đã cộng 30 s: cửa sổ 5,12 s nữa vẫn được (35 ≤ 55). Đã cộng 50 s thì không (55,12 > 55).
+      sessions.findOne.mockResolvedValue(activeSession({ duration_seconds: 50, created_at: new Date(Date.now() - 40_000) }));
+
+      await expect(verify(payload({ sessionId: SESSION }))).rejects.toMatchObject({
+        response: { code: 'ERR_207' },
+      });
+      expect(sessions.save).not.toHaveBeenCalled();
+      expect(windows.insert).not.toHaveBeenCalled();
+      expect(audits.save).not.toHaveBeenCalled();
+    });
+
+    it('chạy bình thường (cửa sổ đến đúng nhịp): vẫn cộng', async () => {
+      sessions.findOne.mockResolvedValue(activeSession({ duration_seconds: 30, created_at: new Date(Date.now() - 40_000) }));
+
+      await verify(payload({ sessionId: SESSION }));
+
+      expect(sessions.save.mock.calls.at(-1)[0].duration_seconds).toBe(35);
+    });
+
+    it('TELEMETRY_ALLOW_FAST_REPLAY=true (máy dev phát lại log 10x): bỏ qua kiểm tra', async () => {
+      service = new TelemetryService(
+        new AntiGigoService(),
+        sessions as unknown as Repository<RunningSession>,
+        audits as unknown as Repository<GigoAuditLog>,
+        { getOrThrow: () => SECRET, get: () => 'true' } as unknown as ConfigService,
+      );
+      sessions.findOne.mockResolvedValue(activeSession({ duration_seconds: 500, created_at: new Date() }));
+
+      await verify(payload({ sessionId: SESSION }));
+
+      expect(sessions.save).toHaveBeenCalled();
+    });
   });
 
   it('chỉ tìm Phiên chạy của chính Sinh viên đang đăng nhập', async () => {

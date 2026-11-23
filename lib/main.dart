@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/core/network/api_client.dart';
 import 'src/core/network/socket_manager.dart';
+import 'src/core/push/push_notifier.dart';
 import 'src/core/theme/siso_theme.dart';
 import 'src/features/auth/presentation/auth_gate.dart';
 
@@ -17,9 +18,15 @@ Future<void> main() async {
   ApiClient.initialize();
   SocketManager.initialize();
 
+  // Thông báo đẩy (FCM): thiếu cấu hình Firebase (.env hoặc file native) thì app vẫn chạy, chỉ không nhận thông báo.
+  final firebaseReady = await initFirebase();
+
   runApp(
-    const ProviderScope(
-      child: SisoApp(),
+    ProviderScope(
+      overrides: [
+        if (firebaseReady) pushMessagingProvider.overrideWithValue(FirebasePushMessaging()),
+      ],
+      child: const SisoApp(),
     ),
   );
 }

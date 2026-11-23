@@ -93,9 +93,10 @@ class AuthRepository {
   }
 
   /// Khôi phục phiên khi mở app. Trả null nếu phải đăng nhập lại.
-  /// - Server xác nhận token (`/auth/me`) -> user mới nhất.
-  /// - Server trả 401 -> xoá token.
-  /// - Mất mạng hoặc server lỗi tạm thời (5xx) -> dùng hồ sơ đã lưu nếu token chưa hết hạn.
+  /// - Server xác nhận token (`/auth/me`) -> user mới nhất, và lưu token mới server trả (gia hạn phiên).
+  /// - Server trả 401/403 -> xoá token.
+  /// - Lỗi khác (mất mạng, 5xx, 404 do sai API_BASE_URL, 429...) -> dùng hồ sơ đã lưu nếu token chưa hết hạn,
+  ///   vì token chưa bị server từ chối.
   /// - Lỗi bất ngờ (đọc storage hỏng, response sai định dạng) -> đăng nhập lại, không ném lỗi.
   Future<AuthUser?> restoreSession() async {
     try {
@@ -117,18 +118,23 @@ class AuthRepository {
         final data = (response.data as Map<String, dynamic>)['data']
             as Map<String, dynamic>;
         final user = AuthUser.fromJson(data['user'] as Map<String, dynamic>);
+        final renewed = data['accessToken'];
+        if (renewed is String && renewed.isNotEmpty) {
+          await _storage.write(tokenKey, renewed);
+          ApiClient.setAccessToken(renewed);
+        }
         await _storage.write(userKey, jsonEncode(user.toJson()));
         return user;
       } on DioException catch (e) {
         final status = e.response?.statusCode;
-        if (status == null || status >= 500) {
+        if (status != 401 && status != 403) {
           final cached = await _storage.read(userKey);
           if (cached != null) {
             return AuthUser.fromJson(
                 jsonDecode(cached) as Map<String, dynamic>);
           }
         }
-        // 401/4xx (hoặc không có hồ sơ lưu sẵn): đăng nhập lại
+        // 401/403 (hoặc không có hồ sơ lưu sẵn): đăng nhập lại
         await _safeLogout();
         return null;
       }

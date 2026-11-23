@@ -43,7 +43,7 @@ export class TelemetryController {
     status: 400,
     description:
       'ERR_201 (GPS giả), ERR_202 (vượt tốc độ người, hoặc 2 cửa sổ liên tiếp nghi đi xe máy, hoặc phiên đã bị loại), ERR_205 (sai chữ ký hoặc gửi lại cửa sổ cũ): Phiên chạy bị loại. ' +
-      'ERR_203 (chưa có tín hiệu vệ tinh, sai số âm hoặc > 20 m), ERR_206 (điểm GPS lệch quá 1 s ngoài thời gian cửa sổ): chỉ bỏ cửa sổ này, Phiên chạy tiếp tục.',
+      'ERR_203 (chưa có tín hiệu vệ tinh, sai số âm hoặc > 20 m), ERR_206 (điểm GPS lệch quá 1 s ngoài thời gian cửa sổ), ERR_207 (cửa sổ đến sớm hơn thời gian thật, vd. gửi dồn): chỉ bỏ cửa sổ này, Phiên chạy tiếp tục.',
   })
   @ApiResponse({ status: 401, description: 'Thiếu hoặc sai JWT' })
   @ApiResponse({ status: 404, description: 'ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc đã kết thúc' })

@@ -200,8 +200,8 @@ describe('AuthService', () => {
         sub: created.id,
         email: EMAIL,
         universityId: HUTECH.id,
-        role: 'authenticated',
       });
+      expect(payload.role).toBeUndefined();
       expect(payload.exp - payload.iat).toBe(7 * 24 * 60 * 60);
       expect(await otpStore.get(EMAIL)).toBeUndefined();
     });
@@ -293,6 +293,15 @@ describe('AuthService', () => {
       users.set('u1', { id: 'u1', email: EMAIL, display_name: 'A', university_id: HUTECH.id } as User);
       const res = await service.getMe('u1');
       expect(res.data!.user).toMatchObject({ id: 'u1', email: EMAIL, university: { shortCode: 'HUTECH' } });
+    });
+
+    it('kèm token mới đủ 7 ngày để gia hạn phiên', async () => {
+      users.set('u1', { id: 'u1', email: EMAIL, display_name: 'A', university_id: HUTECH.id } as User);
+      const res = await service.getMe('u1');
+
+      const payload = jwt.verify(res.data!.accessToken, { secret: JWT_SECRET });
+      expect(payload).toMatchObject({ sub: 'u1', universityId: HUTECH.id });
+      expect(payload.exp - payload.iat).toBe(7 * 24 * 60 * 60);
     });
 
     it('user không còn tồn tại -> 401', async () => {

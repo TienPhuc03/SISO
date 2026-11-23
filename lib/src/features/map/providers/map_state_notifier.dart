@@ -131,12 +131,20 @@ class MapStateNotifier extends StateNotifier<Map<String, HexCell>> {
   late final void Function(dynamic event) _onHexClaimed = applyHexClaimed;
 
   /// Lắng nghe `hex_claimed` qua socket đã khởi tạo trong `main`.
-  void subscribeRealtime() => _repository.subscribeHexClaimed(_onHexClaimed);
+  /// Kết nối lại được: tải lại toàn bộ ô. Bù các `hex_claimed` đã lỡ lúc mất kết nối, và lần tải
+  /// đầu bị lỗi (mở app khi mất mạng / server chưa chạy) thì bản đồ không trống mãi.
+  void _onConnected(dynamic _) => loadHexagons();
+
+  void subscribeRealtime() {
+    _repository.subscribeHexClaimed(_onHexClaimed);
+    _repository.subscribeConnected(_onConnected);
+  }
 
   @override
   void dispose() {
     // Socket sống suốt app: không gỡ thì mỗi lần provider tạo lại sẽ để lại một listener chết.
     _repository.unsubscribeHexClaimed(_onHexClaimed);
+    _repository.unsubscribeConnected(_onConnected);
     _claimedCells.close();
     super.dispose();
   }

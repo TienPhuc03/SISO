@@ -4,6 +4,9 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// FCM cần google-services.json (tải từ Firebase Console). Thiếu file thì bỏ qua để build vẫn chạy, chỉ không có thông báo đẩy.
+if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
+
 android {
     namespace = "vn.edu.siso.siso_project"
     // flutter_local_notifications 23 cần compileSdk ≥ 37 (chỉ là SDK để biên dịch, không đổi minSdk/targetSdk).

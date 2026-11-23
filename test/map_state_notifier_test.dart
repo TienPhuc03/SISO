@@ -9,8 +9,9 @@ import 'package:siso_project/src/features/map/providers/map_state_notifier.dart'
 class FakeHexagonRepository extends HexagonRepository {
   FakeHexagonRepository(this.rows);
 
-  final List<Map<String, dynamic>> rows;
+  List<Map<String, dynamic>> rows;
   void Function(dynamic event)? onClaimed;
+  Function(dynamic event)? onConnected;
 
   /// Callback đã đăng ký và đã gỡ, để kiểm tra notifier gỡ đúng listener của mình.
   Function(dynamic event)? subscribed;
@@ -28,6 +29,14 @@ class FakeHexagonRepository extends HexagonRepository {
   @override
   void unsubscribeHexClaimed(Function(dynamic event) onClaimed) {
     unsubscribed = onClaimed;
+  }
+
+  @override
+  void subscribeConnected(Function(dynamic event) onConnected) => this.onConnected = onConnected;
+
+  @override
+  void unsubscribeConnected(Function(dynamic event) onConnected) {
+    if (this.onConnected == onConnected) this.onConnected = null;
   }
 }
 
@@ -198,6 +207,30 @@ void main() {
 
       expect(repo.subscribed, isNotNull);
       expect(repo.unsubscribed, same(repo.subscribed));
+    });
+  });
+
+  group('MapStateNotifier: kết nối lại', () {
+    test('lần tải đầu lỗi (bản đồ trống): socket kết nối lại thì tải lại ô', () async {
+      final repo = FakeHexagonRepository([]);
+      final notifier = await _loaded(repo);
+      notifier.subscribeRealtime();
+      expect(notifier.state, isEmpty);
+
+      repo.rows = _rows();
+      repo.onConnected!(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(notifier.state.length, 3);
+    });
+
+    test('dispose gỡ listener kết nối lại', () async {
+      final repo = FakeHexagonRepository(_rows());
+      final notifier = await _loaded(repo);
+      notifier.subscribeRealtime();
+      notifier.dispose();
+
+      expect(repo.onConnected, isNull);
     });
   });
 }

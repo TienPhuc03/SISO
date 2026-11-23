@@ -47,7 +47,8 @@ class FakeAuthRepository implements AuthRepository {
     if (requestError != null) throw requestError!;
     return OtpRequestResult(
       email: rawEmail.trim().toLowerCase(),
-      message: 'Mã OTP đã được gửi về hộp thư ${rawEmail.trim().toLowerCase()}.',
+      message:
+          'Mã OTP đã được gửi về hộp thư ${rawEmail.trim().toLowerCase()}.',
       expiresInSeconds: 300,
       resendAfterSeconds: 60,
       university: hutech,
@@ -91,7 +92,10 @@ void main() {
   }
 
   Future<void> goToVerify(WidgetTester tester) async {
-    await tester.enterText(find.byKey(const Key('login_email')), 'SV@hutech.edu.vn');
+    await tester.enterText(
+        find.byKey(const Key('login_email')), 'SV@hutech.edu.vn');
+    await tester.ensureVisible(find.byKey(
+        const Key('login_submit'))); // màn thấp: nút nằm dưới, phải cuộn tới
     await tester.tap(find.byKey(const Key('login_submit')));
     await tester.pumpAndSettle();
   }
@@ -123,11 +127,16 @@ void main() {
         (tester) async {
       await pumpApp(tester);
 
+      await tester.ensureVisible(find.byKey(
+          const Key('login_submit'))); // màn thấp: nút nằm dưới, phải cuộn tới
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pump();
       expect(find.text('Vui lòng không để trống email'), findsOneWidget);
 
-      await tester.enterText(find.byKey(const Key('login_email')), 'a@gmail.com');
+      await tester.enterText(
+          find.byKey(const Key('login_email')), 'a@gmail.com');
+      await tester.ensureVisible(find.byKey(
+          const Key('login_submit'))); // màn thấp: nút nằm dưới, phải cuộn tới
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pump();
       expect(find.text('SISO hiện chỉ hỗ trợ HUTECH, UEF, UTH, FTU2, HIU'),
@@ -160,21 +169,25 @@ void main() {
   });
 
   group('LoginScreen: lỗi bất ngờ và quay lại', () {
-    testWidgets('lỗi không phải SisoException: vẫn hiện thông báo', (tester) async {
+    testWidgets('lỗi không phải SisoException: vẫn hiện thông báo',
+        (tester) async {
       repo.requestError = StateError('response sai định dạng');
       await pumpApp(tester);
       await goToVerify(tester);
       expect(find.text(unexpectedAuthError), findsOneWidget);
     });
 
-    testWidgets('quay lại từ màn OTP trong 60s rồi bấm lại: mở lại màn OTP, không gửi mã mới',
+    testWidgets(
+        'quay lại từ màn OTP trong 60s rồi bấm lại: mở lại màn OTP, không gửi mã mới',
         (tester) async {
       await pumpApp(tester);
       await goToVerify(tester);
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('Quay lại'));
       await tester.pumpAndSettle();
       expect(find.text('Chạy cho trường của bạn'), findsOneWidget);
 
+      await tester.ensureVisible(find.byKey(
+          const Key('login_submit'))); // màn thấp: nút nằm dưới, phải cuộn tới
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pumpAndSettle();
 
@@ -183,12 +196,15 @@ void main() {
     });
 
     testWidgets('quay lại sau khi hết 60s: gửi mã mới', (tester) async {
-      repo.sentAtOverride = DateTime.now().subtract(const Duration(seconds: 61));
+      repo.sentAtOverride =
+          DateTime.now().subtract(const Duration(seconds: 61));
       await pumpApp(tester);
       await goToVerify(tester);
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('Quay lại'));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.byKey(
+          const Key('login_submit'))); // màn thấp: nút nằm dưới, phải cuộn tới
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pumpAndSettle();
 
@@ -198,10 +214,13 @@ void main() {
     testWidgets('đổi sang email khác: gửi mã mới cho email đó', (tester) async {
       await pumpApp(tester);
       await goToVerify(tester);
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('Quay lại'));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byKey(const Key('login_email')), 'khac@hutech.edu.vn');
+      await tester.enterText(
+          find.byKey(const Key('login_email')), 'khac@hutech.edu.vn');
+      await tester.ensureVisible(find.byKey(
+          const Key('login_submit'))); // màn thấp: nút nằm dưới, phải cuộn tới
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pumpAndSettle();
 
@@ -210,7 +229,8 @@ void main() {
   });
 
   group('VerifyScreen', () {
-    testWidgets('lỗi không phải SisoException khi xác thực: hiện thông báo chung',
+    testWidgets(
+        'lỗi không phải SisoException khi xác thực: hiện thông báo chung',
         (tester) async {
       repo.verifyError = StateError('ghi storage lỗi');
       await pumpApp(tester);
@@ -223,8 +243,10 @@ void main() {
       expect(find.text(mapTitle), findsNothing);
     });
 
-    testWidgets('màn OTP mở với mã gửi 50s trước: chỉ còn chờ 10s', (tester) async {
-      repo.sentAtOverride = DateTime.now().subtract(const Duration(seconds: 50));
+    testWidgets('màn OTP mở với mã gửi 50s trước: chỉ còn chờ 10s',
+        (tester) async {
+      repo.sentAtOverride =
+          DateTime.now().subtract(const Duration(seconds: 50));
       await pumpApp(tester);
       await goToVerify(tester);
       expect(find.text('Gửi lại mã sau 10s'), findsOneWidget);
@@ -237,9 +259,13 @@ void main() {
       await tester.enterText(find.byKey(const Key('verify_otp')), '000000');
       await tester.pumpAndSettle();
 
-      expect(find.text('Mã OTP không đúng. Bạn còn 4 lần thử.'), findsOneWidget);
       expect(
-        tester.widget<TextField>(find.byKey(const Key('verify_otp'))).controller!.text,
+          find.text('Mã OTP không đúng. Bạn còn 4 lần thử.'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('verify_otp')))
+            .controller!
+            .text,
         isEmpty,
       );
     });
@@ -251,7 +277,10 @@ void main() {
       await tester.enterText(find.byKey(const Key('verify_otp')), '12a4');
       await tester.pump();
       expect(
-        tester.widget<TextField>(find.byKey(const Key('verify_otp'))).controller!.text,
+        tester
+            .widget<TextField>(find.byKey(const Key('verify_otp')))
+            .controller!
+            .text,
         '124',
       );
       await tester.tap(find.byKey(const Key('verify_submit')));
@@ -260,7 +289,8 @@ void main() {
       expect(repo.verifyAttempts, isEmpty);
     });
 
-    testWidgets('OTP đúng (tự gửi khi đủ 6 số): vào bản đồ, không quay lại được Login',
+    testWidgets(
+        'OTP đúng (tự gửi khi đủ 6 số): vào bản đồ, không quay lại được Login',
         (tester) async {
       await pumpApp(tester);
       await goToVerify(tester);
@@ -299,7 +329,8 @@ void main() {
   });
 
   group('Đăng xuất', () {
-    testWidgets('xác nhận đăng xuất: xoá phiên, về LoginScreen', (tester) async {
+    testWidgets('xác nhận đăng xuất: xoá phiên, về LoginScreen',
+        (tester) async {
       repo.restoredUser = student;
       await pumpApp(tester);
 
@@ -329,8 +360,8 @@ void main() {
         (tester) async {
       repo.restoredUser = student;
       await pumpApp(tester);
-      final container = ProviderScope.containerOf(
-          tester.element(find.byType(AuthGate)));
+      final container =
+          ProviderScope.containerOf(tester.element(find.byType(AuthGate)));
 
       // Mô phỏng interceptor của ApiClient gặp 401
       await container.read(authSessionProvider.notifier).logout();

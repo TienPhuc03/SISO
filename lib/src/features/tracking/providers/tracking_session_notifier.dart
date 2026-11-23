@@ -172,12 +172,13 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
           state = state.copyWith(status: TrackingStatus.idle, errorCode: e.code, errorMessage: e.message);
         }
       } catch (_) {
-        // shortcut: không thử gửi lại, km lần này mất; thêm hàng đợi gửi lại nếu field test thấy mất mạng thường xuyên.
+        // Không cần gửi lại: Phiên còn ACTIVE thì pg_cron finish_stale_sessions tự kết thúc và cộng km sau 30 phút.
         if (mounted) {
           state = state.copyWith(
             status: TrackingStatus.idle,
             errorCode: 'ERR_NETWORK',
-            errorMessage: 'Không gửi được kết quả Phiên chạy, quãng đường lần này chưa được cộng.',
+            errorMessage:
+                'Không gửi được kết quả Phiên chạy. Quãng đường đã kiểm định sẽ được tự cộng trong khoảng 30 phút.',
           );
         }
       }
@@ -215,6 +216,8 @@ class TrackingSessionNotifier extends StateNotifier<RunState> {
         state = state.copyWith(gpsSearching: true, connectionIssue: false);
         return;
       }
+      // ERR_206/ERR_207: server cũng chỉ bỏ cửa sổ này (vệt GPS lệch giờ, cửa sổ đến sớm), Phiên chạy tiếp tục.
+      if (e.code == SisoErrorCodes.invalidGpsPoints || e.code == SisoErrorCodes.windowTooEarly) return;
       _cancelSubscriptions();
       _source.stop();
       // Chỉ các mã Anti-GIGO này là Phiên bị loại. Các lỗi khác (ERR_204 Phiên đã kết thúc,
