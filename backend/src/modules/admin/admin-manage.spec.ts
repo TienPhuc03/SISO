@@ -18,6 +18,7 @@ function setup(opts: { findOne?: Map<unknown, unknown>; exists?: Map<unknown, bo
     update: jest.fn(async () => ({ affected: 1 })),
     insert: jest.fn(async () => ({ identifiers: [{ id: 'new-id' }] })),
     delete: jest.fn(async () => ({ affected: 1 })),
+    increment: jest.fn(),
     query: opts.query ?? jest.fn(async () => [{ next: 4 }]),
   };
   const ds = { transaction: jest.fn((fn) => fn(tx)), query: jest.fn(async () => [{ total: 0 }]) } as unknown as DataSource;
@@ -98,15 +99,58 @@ describe('CatalogService: Mùa giải', () => {
 });
 
 describe('CatalogService: Trường', () => {
-  const dto = { shortCode: ' new ', name: 'Trường Mới', emailDomain: 'NEW.edu.vn', hexColor: '#aabbcc' };
+  const dto = { shortCode: ' new ', name: 'Trường Mới', emailDomain: 'NEW.edu.vn', hexColor: '#aabbcc', district: 'Quận 3' };
 
   it('chuẩn hoá mã / đuôi email / màu khi lưu', async () => {
     const { tx, catalog } = setup();
     await catalog.createUniversity(ADMIN, dto);
     expect(tx.insert).toHaveBeenCalledWith(
       University,
-      expect.objectContaining({ short_code: 'NEW', short_name: 'NEW', email_domain: 'new.edu.vn', hex_color: '#AABBCC' }),
+      expect.objectContaining({
+        short_code: 'NEW',
+        short_name: 'NEW',
+        email_domain: 'new.edu.vn',
+        hex_color: '#AABBCC',
+        district: 'Quận 3',
+        parent_name: null,
+      }),
     );
+  });
+
+  it('đuôi email bỏ trống -> null; tên ngắn riêng', async () => {
+    const { tx, catalog } = setup();
+    await catalog.createUniversity(ADMIN, { ...dto, emailDomain: undefined, shortName: 'Trường M' });
+    expect(tx.insert).toHaveBeenCalledWith(University, expect.objectContaining({ email_domain: null, short_name: 'Trường M' }));
+  });
+
+  it('quận không có trong danh sách (23503) -> 400 ERR_113', async () => {
+    const { tx, catalog } = setup();
+    tx.insert.mockRejectedValueOnce(Object.assign(new QueryFailedError('INSERT', [], new Error('fk')), { code: '23503' }));
+    await expect(catalog.createUniversity(ADMIN, dto)).rejects.toMatchObject({ response: { code: 'ERR_113' } });
+  });
+
+  it('duyệt: bỏ nhãn chờ duyệt, ghi nhật ký', async () => {
+    const { tx, catalog } = setup({ findOne: new Map([[University, { id: 'u', short_code: 'X' }]]) });
+    await catalog.verifyUniversity(ADMIN, 'u');
+    expect(tx.update).toHaveBeenCalledWith(University, 'u', { is_verified: true });
+  });
+
+  it('gộp: chuyển Sinh viên, Ô đất, Quán quân, cộng Quỹ Km rồi xoá Trường trùng', async () => {
+    const query = jest.fn(async () => [[], 2]);
+    const { tx, catalog } = setup({ findOne: new Map([[University, { id: 'src', short_code: 'X', total_season_km: 3.5 }]]), query });
+    await catalog.mergeUniversity(ADMIN, 'src', { targetId: 'dst' });
+
+    const sqls = query.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(sqls.some((q) => q.includes('UPDATE public.users SET university_id = $2'))).toBe(true);
+    expect(sqls.some((q) => q.includes('UPDATE public.h3_hexagons SET owner_university_id = $2'))).toBe(true);
+    expect(sqls.some((q) => q.includes('UPDATE public.hall_of_fame SET champion_university_id = $2'))).toBe(true);
+    expect(tx.increment).toHaveBeenCalledWith(University, { id: 'src' }, 'total_season_km', 3.5);
+    expect(tx.delete).toHaveBeenCalledWith(University, 'src');
+  });
+
+  it('gộp vào chính nó -> 400', () => {
+    const { catalog } = setup();
+    expect(() => catalog.mergeUniversity(ADMIN, 'a', { targetId: 'a' })).toThrow(BadRequestException);
   });
 
   it('trùng mã hoặc đuôi email (23505) -> 409', async () => {

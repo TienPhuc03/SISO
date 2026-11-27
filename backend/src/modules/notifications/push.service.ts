@@ -1,7 +1,7 @@
 import { existsSync } from 'fs';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { App, applicationDefault, initializeApp } from 'firebase-admin/app';
+import { App, applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 
 /** Mỗi trường một topic FCM; app tự đăng ký topic của trường mình khi đăng nhập. GIỮ KHỚP với app. */
@@ -27,7 +27,8 @@ export class PushService {
       this.logger.error(`Không thấy file ${credentials} (GOOGLE_APPLICATION_CREDENTIALS): tắt thông báo đẩy.`);
       return;
     }
-    this.app = initializeApp({ credential: applicationDefault() });
+    // Đăng nhập Google (GoogleIdTokenVerifier) có thể đã khởi tạo app mặc định
+    this.app = getApps()[0] ?? initializeApp({ credential: applicationDefault() });
   }
 
   get enabled(): boolean {

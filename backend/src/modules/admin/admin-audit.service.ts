@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { AdminAction } from '../../entities/admin-action.entity';
 
-export type AdminTargetType = 'user' | 'gigo_log' | 'season' | 'university' | 'arena';
+export type AdminTargetType = 'user' | 'gigo_log' | 'season' | 'university' | 'arena' | 'forum_post' | 'forum_comment' | 'forum_report';
 
 /** Ghi và đọc nhật ký thao tác admin. Ghi bằng `manager` của transaction đang chạy để cùng commit/rollback. */
 @Injectable()

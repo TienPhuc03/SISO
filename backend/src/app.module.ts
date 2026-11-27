@@ -9,6 +9,8 @@ import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { UniversitiesModule } from './modules/universities/universities.module';
+import { ForumModule } from './modules/forum/forum.module';
 
 import { University } from './entities/university.entity';
 import { User } from './entities/user.entity';
@@ -73,6 +75,8 @@ import { AdminAction } from './entities/admin-action.entity';
     ProfileModule,
     NotificationsModule,
     AdminModule,
+    UniversitiesModule,
+    ForumModule,
   ],
 })
 export class AppModule {}

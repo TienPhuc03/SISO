@@ -49,7 +49,7 @@ describe('ProfileService', () => {
         personalKm: 2.456,
         completedRuns: 4,
         avatarUrl: null,
-        university: { shortCode: 'UTH', name: 'ĐH GTVT', color: '#0B2545' },
+        university: { shortCode: 'UTH', shortName: 'UTH', name: 'ĐH GTVT', color: '#0B2545' },
       });
     });
 
