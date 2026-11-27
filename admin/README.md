@@ -20,10 +20,10 @@ npm run dev            # http://localhost:5173
 INSERT INTO public.users (email, display_name, role) VALUES (lower('<email>'), 'Admin', 'admin')
 ON CONFLICT (email) DO UPDATE SET role = 'admin';
 
--- Hoặc nâng quyền một Sinh viên đã đăng nhập app bằng email trường
+-- Hoặc nâng quyền một tài khoản đã đăng nhập app
 UPDATE public.users SET role = 'admin' WHERE email = '<email>';
 ```
 
-Email ngoài trường chỉ đăng nhập được khi đã là admin; không ai tự đăng ký bằng email thường được.
+Ai cũng đăng nhập được bằng email bất kỳ (OTP) hoặc Google, nhưng chỉ tài khoản `role = 'admin'` mới vào được trang admin (còn lại bị ERR_107).
 
 Schema cần chạy trước: section 11 của `backend/src/database/init_schema.sql`.
