@@ -26,6 +26,9 @@ export class HallOfFame {
   @Column({ type: 'uuid' })
   champion_university_id: string;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  cluster_code: string | null;
+
   @ManyToOne(() => University, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'champion_university_id' })
   championUniversity: University;

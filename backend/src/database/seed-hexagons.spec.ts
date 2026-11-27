@@ -46,6 +46,13 @@ describe('buildSeedPlan', () => {
     expect(plan[0].overlapDropped).toBe(0);
   });
 
+  it('Cụm lấy từ properties.cluster, bỏ trống thì là NORTH (Đấu trường Bình Thạnh cũ)', () => {
+    const south = square('Nam', 106.7, 10.73, 0.003);
+    south.properties.cluster = 'SOUTH';
+    const plan = buildSeedPlan([square('Cũ', 106.718, 10.791, 0.003), south]);
+    expect(plan.map((a) => a.cluster)).toEqual(['NORTH', 'SOUTH']);
+  });
+
   it('từ chối geometry không phải Polygon', () => {
     const bad = { ...square('X', 106.7, 10.8, 0.01), geometry: { type: 'Point', coordinates: [] } };
     expect(() => buildSeedPlan([bad as unknown as ArenaFeature])).toThrow('Polygon');
@@ -55,26 +62,32 @@ describe('buildSeedPlan', () => {
 describe('arenas.geojson trong repo', () => {
   const plan = buildSeedPlan(loadArenaFeatures());
 
-  it('có 4 Đấu trường, mỗi cái có ô và dưới trần 150 ô/vòng claim', () => {
-    expect(plan.map((a) => a.name)).toEqual([
+  it('4 Đấu trường Bình Thạnh (Cụm NORTH) và 3 Đấu trường mỗi Cụm còn lại; mỗi cái có ô, dưới trần 150 ô/vòng claim', () => {
+    const byCluster = (c: string) => plan.filter((a) => a.cluster === c).map((a) => a.name);
+    expect(byCluster('NORTH')).toEqual([
       'Khu Đô Thị Sala',
       'Công Viên Landmark 81',
       'Khu Vực Bờ Kè Thanh Đa',
       'Cụm Đại Học Bình Thạnh (Khu D2)',
     ]);
+    for (const c of ['THU_DUC', 'CENTRAL', 'SOUTH']) expect(byCluster(c)).toHaveLength(3);
     for (const a of plan) {
       expect(a.cells.length).toBeGreaterThan(0);
       expect(a.cells.length).toBeLessThanOrEqual(150);
     }
   });
 
-  it('các ô nằm quanh khu Bình Thạnh (không đảo lat/lng)', () => {
+  it('tên Đấu trường không trùng (seed upsert theo tên)', () => {
+    expect(new Set(plan.map((a) => a.name)).size).toBe(plan.length);
+  });
+
+  it('các ô nằm trong nội thành TP.HCM (không đảo lat/lng)', () => {
     for (const cell of plan.flatMap((a) => a.cells)) {
       const [lat, lng] = cellToLatLng(cell);
-      expect(lat).toBeGreaterThan(10.75);
-      expect(lat).toBeLessThan(10.85);
-      expect(lng).toBeGreaterThan(106.69);
-      expect(lng).toBeLessThan(106.74);
+      expect(lat).toBeGreaterThan(10.7);
+      expect(lat).toBeLessThan(10.9);
+      expect(lng).toBeGreaterThan(106.68);
+      expect(lng).toBeLessThan(106.82);
     }
   });
 });
