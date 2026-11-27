@@ -14,9 +14,8 @@ export interface SeasonRow {
   startDate: string
   endDate: string
   isActive: boolean
-  championCode: string | null
-  championColor: string | null
-  championPowerPct: number | null
+  /** Quán quân mỗi Cụm (rỗng nếu Mùa chưa đóng / không có hoạt động) */
+  champions: { clusterCode: string | null; id: string; code: string; color: string; powerPct: number }[]
 }
 
 /** Tạo (season = undefined) hoặc sửa một Mùa giải. */

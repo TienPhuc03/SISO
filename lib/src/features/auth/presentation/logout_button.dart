@@ -11,7 +11,7 @@ class LogoutButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authSessionProvider);
-    final campus = session is AuthSignedIn ? session.user.university.shortCode : null;
+    final campus = session is AuthSignedIn ? session.user.university?.shortName : null;
 
     return SisoCircleButton(
       key: const Key('logout_button'),

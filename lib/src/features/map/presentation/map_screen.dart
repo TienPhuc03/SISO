@@ -9,6 +9,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/siso_theme.dart';
 import '../../auth/presentation/logout_button.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../forum/presentation/forum_screen.dart';
 import '../../leaderboard/presentation/leaderboard_screen.dart';
 import '../../leaderboard/providers/season_rank_provider.dart';
 import '../../profile/presentation/profile_button.dart';
@@ -255,7 +256,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                               children: [
                                 CampusDot(color: parseHexColor(campus.color)),
                                 const SizedBox(width: 6),
-                                Text(campus.shortCode,
+                                Text(campus.shortName,
                                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                               ],
                             ),
@@ -318,6 +319,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               onMap: () {},
               onRun: _openRun,
               onLeaderboard: _openLeaderboard,
+              onForum: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ForumScreen())),
               onRunLongPress: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => const SensorLogScreen()),
               ),

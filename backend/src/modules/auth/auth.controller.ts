@@ -2,10 +2,16 @@ import { Controller, Post, Get, Body, HttpCode, HttpStatus, UseGuards, Request }
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { EduLoginDto } from './dto/edu-login.dto';
+import { EmailLoginDto } from './dto/email-login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { AUTH_THROTTLE_TTL_MS, EDU_LOGIN_LIMIT_PER_MIN, VERIFY_OTP_LIMIT_PER_MIN } from './auth-throttle';
+import {
+  AUTH_THROTTLE_TTL_MS,
+  EMAIL_LOGIN_LIMIT_PER_MIN,
+  GOOGLE_LOGIN_LIMIT_PER_MIN,
+  VERIFY_OTP_LIMIT_PER_MIN,
+} from './auth-throttle';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -13,15 +19,26 @@ import { AUTH_THROTTLE_TTL_MS, EDU_LOGIN_LIMIT_PER_MIN, VERIFY_OTP_LIMIT_PER_MIN
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('edu-login')
+  @Post('email-login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: EDU_LOGIN_LIMIT_PER_MIN, ttl: AUTH_THROTTLE_TTL_MS } })
-  @ApiOperation({ summary: 'Gửi mã OTP về Email Sinh viên 5 trường Bình Thạnh' })
+  @Throttle({ default: { limit: EMAIL_LOGIN_LIMIT_PER_MIN, ttl: AUTH_THROTTLE_TTL_MS } })
+  @ApiOperation({ summary: 'Gửi mã OTP về email (email bất kỳ)' })
   @ApiResponse({ status: 200, description: 'Gửi OTP thành công về email' })
-  @ApiResponse({ status: 400, description: 'ERR_101: Email không thuộc trường hợp lệ | ERR_103: Gửi lại quá nhanh (60s)' })
+  @ApiResponse({ status: 400, description: 'ERR_103: Gửi lại quá nhanh (60s)' })
   @ApiResponse({ status: 429, description: 'Quá nhiều yêu cầu từ cùng IP' })
-  async requestEduLogin(@Body() dto: EduLoginDto) {
-    return this.authService.requestEduLogin(dto.email);
+  async requestEmailLogin(@Body() dto: EmailLoginDto) {
+    return this.authService.requestEmailLogin(dto.email);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: GOOGLE_LOGIN_LIMIT_PER_MIN, ttl: AUTH_THROTTLE_TTL_MS } })
+  @ApiOperation({ summary: 'Đổi Firebase ID token (đăng nhập Google) lấy JWT SISO' })
+  @ApiResponse({ status: 200, description: 'Đăng nhập thành công, trả về Access Token' })
+  @ApiResponse({ status: 400, description: 'ERR_110: máy chủ chưa bật đăng nhập Google' })
+  @ApiResponse({ status: 401, description: 'ERR_111: ID token sai/hết hạn hoặc email chưa xác minh' })
+  async loginWithGoogle(@Body() dto: GoogleLoginDto) {
+    return this.authService.loginWithGoogle(dto.idToken);
   }
 
   @Post('verify-otp')

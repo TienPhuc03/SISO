@@ -32,8 +32,13 @@ const ACTION_LABELS: Record<string, string> = {
   'university.update': 'Sửa Trường',
   'university.delete': 'Xoá Trường',
   'arena.update': 'Sửa Đấu trường',
+  'university.verify': 'Duyệt Trường',
+  'university.merge': 'Gộp Trường',
+  'forum.post.delete': 'Xoá bài diễn đàn',
+  'forum.comment.delete': 'Xoá bình luận',
+  'forum.report.dismiss': 'Bỏ qua báo cáo',
 }
-const TARGETS: Record<string, string> = { user: 'Sinh viên', gigo_log: 'Nhật ký GIGO', season: 'Mùa giải', university: 'Trường', arena: 'Đấu trường' }
+const TARGETS: Record<string, string> = { user: 'Sinh viên', gigo_log: 'Nhật ký GIGO', season: 'Mùa giải', university: 'Trường', arena: 'Đấu trường', forum_post: 'Bài diễn đàn', forum_comment: 'Bình luận', forum_report: 'Báo cáo diễn đàn' }
 
 function Target({ a }: { a: AdminAction }) {
   if (a.targetType === 'user' && a.targetId)

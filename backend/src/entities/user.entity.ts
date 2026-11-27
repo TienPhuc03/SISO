@@ -23,6 +23,10 @@ export class User {
   @Column({ nullable: true })
   university_id: string;
 
+  /** Mùa giải lúc chọn Trường gần nhất (luật khoá Trường theo Mùa); null = chọn trước khi có luật. */
+  @Column({ type: 'int', nullable: true })
+  university_season: number | null;
+
   @Column({ length: 10, default: 'user' })
   role: UserRole;
 

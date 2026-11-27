@@ -11,6 +11,7 @@ import { SeasonsPage } from '@/features/catalog/SeasonsPage'
 import { StudentsPage } from '@/features/students/StudentsPage'
 import { StudentDetailPage } from '@/features/students/StudentDetailPage'
 import { ActionsPage } from '@/features/actions/ActionsPage'
+import { ForumReportsPage } from '@/features/forum/ForumReportsPage'
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { status } = useAuth()
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="students" element={<StudentsPage />} />
         <Route path="students/:id" element={<StudentDetailPage />} />
         <Route path="actions" element={<ActionsPage />} />
+        <Route path="forum" element={<ForumReportsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

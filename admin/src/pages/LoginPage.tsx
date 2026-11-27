@@ -28,7 +28,7 @@ export function LoginPage() {
     setBusy(true)
     setError(null)
     try {
-      const r = await send<{ email: string }>('post', '/auth/edu-login', { email })
+      const r = await send<{ email: string }>('post', '/auth/email-login', { email })
       setEmail(r.email)
       setHint(`Đã gửi mã OTP 6 số tới ${r.email}.`)
       setStep('otp')
@@ -101,7 +101,7 @@ export function LoginPage() {
                   type="email"
                   autoComplete="email"
                   required
-                  placeholder="admin@gmail.com hoặc ten@hutech.edu.vn"
+                  placeholder="admin@gmail.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   aria-invalid={!!error}

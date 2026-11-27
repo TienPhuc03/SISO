@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { CalendarPlus, Crown, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BadgeCheck, CalendarPlus, Crown, Merge, Pencil, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/PageHeader'
 import { DataTable } from '@/components/DataTable'
@@ -15,9 +15,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { errorMessage, get, send } from '@/lib/api'
 import { fmtNumber } from '@/lib/format'
 import type { University } from '@/lib/types'
-import { useUniversities } from '@/features/anti-cheat/api'
+import { useUniversities, useUniversityCatalog } from '@/features/anti-cheat/api'
 import { SeasonDialog, type SeasonRow } from './SeasonForms'
-import { UniversityDialog } from './UniversityDialog'
+import { MergeUniversityDialog, UniversityDialog } from './UniversityDialog'
 
 interface Score {
   university_id: string
@@ -28,6 +28,8 @@ interface Score {
   territory_pct: string
   mileage_pct: string
   composite_power_pct: string
+  cluster_code: string | null
+  cluster_has_arena: boolean
 }
 interface ArenaRow {
   id: string
@@ -46,6 +48,8 @@ export function SeasonsPage() {
   const seasons = useQuery({ queryKey: ['seasons'], queryFn: () => get<SeasonRow[]>('/admin/seasons') })
   const scores = useQuery({ queryKey: ['scores'], queryFn: () => get<Score[]>('/leaderboard/scores'), refetchInterval: 60_000 })
   const universities = useUniversities()
+  const catalog = useUniversityCatalog()
+  const clusterName = (code: string | null) => catalog.data?.clusters.find((c) => c.code === code)?.name ?? 'Chưa có Cụm'
   const arenas = useQuery({ queryKey: ['admin-arenas'], queryFn: () => get<ArenaRow[]>('/admin/arenas') })
 
   const run = (fn: () => Promise<unknown>, ok: string, keys: string[][]) =>
@@ -78,8 +82,10 @@ export function SeasonsPage() {
     return { pct, daysLeft: Math.max(0, Math.ceil((end - Date.now()) / DAY_MS)), totalDays: Math.round((end - start) / DAY_MS) }
   }, [current])
 
-  const ranked = (scores.data ?? []).map((s) => ({
+  // Backend xếp theo Cụm rồi điểm; hạng tính trong từng Cụm.
+  const ranked = (scores.data ?? []).map((s, i, all) => ({
     ...s,
+    rank: all.slice(0, i).filter((x) => x.cluster_code === s.cluster_code).length + 1,
     territory: Number(s.territory_pct),
     mileage: Number(s.mileage_pct),
     composite: Number(s.composite_power_pct),
@@ -96,13 +102,17 @@ export function SeasonsPage() {
         cell: ({ row }) => (row.original.isActive ? <Pill tone="ok" icon={CalendarPlus}>Đang mở</Pill> : <Pill tone="muted" icon={CalendarPlus}>Đã đóng</Pill>),
       },
       {
-        header: 'Quán quân',
+        header: 'Quán quân các Cụm',
         cell: ({ row }) =>
-          row.original.championCode ? (
-            <span className="inline-flex items-center gap-2">
-              <UniversityTag code={row.original.championCode} color={row.original.championColor} />
-              <span className="text-xs tabular-nums text-muted-foreground">{fmtNumber(row.original.championPowerPct, 2)}%</span>
-            </span>
+          row.original.champions.length ? (
+            <div className="flex flex-col gap-1">
+              {row.original.champions.map((c) => (
+                <span key={`${c.clusterCode}-${c.id}`} className="inline-flex items-center gap-2" title={clusterName(c.clusterCode)}>
+                  <UniversityTag code={c.code} color={c.color} />
+                  <span className="text-xs tabular-nums text-muted-foreground">{fmtNumber(c.powerPct, 2)}%</span>
+                </span>
+              ))}
+            </div>
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
@@ -122,7 +132,7 @@ export function SeasonsPage() {
                   </Button>
                 }
               />
-              {!s.isActive && !s.championCode && (
+              {!s.isActive && !s.champions.length && (
                 <ConfirmDialog
                   title={`Xoá Mùa giải ${s.seasonNumber}?`}
                   description="Chỉ xoá được Mùa giải chưa mở và chưa có Quán quân."
@@ -141,15 +151,43 @@ export function SeasonsPage() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [catalog.data],
   )
 
   const uniColumns = useMemo<ColumnDef<University>[]>(
     () => [
-      { header: 'Trường', cell: ({ row }) => <UniversityTag code={row.original.shortCode} color={row.original.hexColor} /> },
-      { header: 'Tên', cell: ({ row }) => row.original.name },
-      { header: 'Đuôi email', cell: ({ row }) => <span className="font-mono text-xs">{row.original.emailDomain}</span> },
-      { header: 'Màu', cell: ({ row }) => <span className="font-mono text-xs">{row.original.hexColor}</span> },
+      {
+        header: 'Trường',
+        cell: ({ row }) => (
+          <div className="flex flex-col items-start gap-1">
+            <UniversityTag code={row.original.shortName} color={row.original.hexColor} />
+            {!row.original.verified && (
+              <Pill tone="warn" icon={BadgeCheck}>
+                Chờ duyệt
+              </Pill>
+            )}
+          </div>
+        ),
+      },
+      {
+        header: 'Tên',
+        cell: ({ row }) => (
+          <div className="min-w-48">
+            <div>{row.original.name}</div>
+            <div className="font-mono text-xs text-muted-foreground">{row.original.shortCode}</div>
+          </div>
+        ),
+      },
+      {
+        header: 'Cụm · Quận',
+        cell: ({ row }) => (
+          <div className="min-w-40 text-xs">
+            <div>{clusterName(row.original.clusterCode)}</div>
+            <div className="text-muted-foreground">{row.original.district ?? '—'}</div>
+          </div>
+        ),
+      },
+      { header: 'Sinh viên', cell: ({ row }) => <span className="tabular-nums">{row.original.studentCount}</span> },
       {
         id: 'actions',
         header: () => <span className="sr-only">Thao tác</span>,
@@ -157,21 +195,41 @@ export function SeasonsPage() {
           const u = row.original
           return (
             <div className="flex justify-end gap-1">
+              {!u.verified && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Duyệt ${u.shortName}`}
+                  title="Duyệt"
+                  onClick={() => run(() => send('post', `/admin/universities/${u.id}/verify`), `Đã duyệt ${u.shortName}.`, [['universities']]).catch(() => {})}
+                >
+                  <BadgeCheck />
+                </Button>
+              )}
+              <MergeUniversityDialog
+                university={u}
+                universities={universities.data ?? []}
+                trigger={
+                  <Button variant="ghost" size="icon" aria-label={`Gộp ${u.shortName} vào Trường khác`} title="Gộp vào Trường khác">
+                    <Merge />
+                  </Button>
+                }
+              />
               <UniversityDialog
                 university={u}
                 trigger={
-                  <Button variant="ghost" size="icon" aria-label={`Sửa ${u.shortCode}`}>
+                  <Button variant="ghost" size="icon" aria-label={`Sửa ${u.shortName}`}>
                     <Pencil />
                   </Button>
                 }
               />
               <ConfirmDialog
-                title={`Xoá ${u.shortCode}?`}
-                description="Chỉ xoá được Trường chưa có Sinh viên. Ô đất của Trường (nếu có) về Trung lập."
+                title={`Xoá ${u.shortName}?`}
+                description="Chỉ xoá được Trường chưa có Sinh viên (Trường trùng có Sinh viên thì dùng Gộp). Ô đất của Trường (nếu có) về Trung lập."
                 confirmLabel="Xoá Trường"
-                onConfirm={() => run(() => send('delete', `/admin/universities/${u.id}`), `Đã xoá ${u.shortCode}.`, [['universities'], ['scores']])}
+                onConfirm={() => run(() => send('delete', `/admin/universities/${u.id}`), `Đã xoá ${u.shortName}.`, [['universities'], ['scores']])}
                 trigger={
-                  <Button variant="ghost" size="icon" aria-label={`Xoá ${u.shortCode}`}>
+                  <Button variant="ghost" size="icon" aria-label={`Xoá ${u.shortName}`}>
                     <Trash2 />
                   </Button>
                 }
@@ -182,7 +240,7 @@ export function SeasonsPage() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [catalog.data, universities.data],
   )
 
   const arenaColumns = useMemo<ColumnDef<ArenaRow>[]>(
@@ -259,6 +317,7 @@ export function SeasonsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2 pr-2 font-medium">Cụm</th>
                   <th className="py-2 pr-2 font-medium">#</th>
                   <th className="py-2 pr-2 font-medium">Trường</th>
                   <th className="py-2 pr-2 text-right font-medium">% Lãnh thổ</th>
@@ -268,9 +327,12 @@ export function SeasonsPage() {
                 </tr>
               </thead>
               <tbody className="tabular-nums">
-                {ranked.map((r, i) => (
+                {ranked.map((r) => (
                   <tr key={r.university_id} className="border-b last:border-0">
-                    <td className="py-2 pr-2 text-muted-foreground">{i + 1}</td>
+                    <td className="max-w-40 truncate py-2 pr-2 text-xs text-muted-foreground" title={clusterName(r.cluster_code)}>
+                      {r.rank === 1 ? clusterName(r.cluster_code) : ''}
+                    </td>
+                    <td className="py-2 pr-2 text-muted-foreground">{r.rank}</td>
                     <td className="py-2 pr-2">
                       <UniversityTag code={r.short_code} color={r.hex_color} />
                     </td>
@@ -289,7 +351,9 @@ export function SeasonsPage() {
                 ))}
               </tbody>
             </table>
-            <p className="mt-2 text-xs text-muted-foreground">Sức mạnh Tổng hợp = ½ % Lãnh thổ + ½ % Km.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Xếp hạng trong từng Cụm. Sức mạnh Tổng hợp = ½ % Lãnh thổ + ½ % Km; Cụm chưa có Đấu trường tính 100% theo % Km.
+            </p>
           </CardContent>
         </Card>
       </div>

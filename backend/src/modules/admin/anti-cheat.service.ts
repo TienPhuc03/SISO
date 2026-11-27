@@ -56,8 +56,12 @@ export class AntiCheatService {
   /** Danh sách Trường cho bộ lọc / tô màu. */
   universities() {
     return this.dataSource.query(
-      `SELECT id, short_code AS "shortCode", name, email_domain AS "emailDomain", hex_color AS "hexColor"
-       FROM public.universities ORDER BY short_code`,
+      `SELECT u.id, u.short_code AS "shortCode", COALESCE(u.short_name, u.short_code) AS "shortName", u.name,
+              u.email_domain AS "emailDomain", u.hex_color AS "hexColor", u.district, d.cluster_code AS "clusterCode",
+              u.parent_name AS "parentName", u.aliases, u.is_verified AS verified, u.created_at AS "createdAt",
+              (SELECT COUNT(*)::int FROM public.users s WHERE s.university_id = u.id) AS "studentCount"
+       FROM public.universities u LEFT JOIN public.districts d ON d.name = u.district
+       ORDER BY u.is_verified, u.short_code`,
     );
   }
 

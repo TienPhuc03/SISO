@@ -4,7 +4,9 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/errors/siso_exceptions.dart';
 import '../../../core/theme/siso_theme.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../map/domain/hex_cell.dart' show parseHexColor;
+import '../../university/presentation/university_picker_screen.dart';
 import '../../tracking/presentation/active_run_screen.dart' show formatDuration;
 import '../domain/profile_models.dart';
 import '../providers/profile_providers.dart';
@@ -62,6 +64,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget build(BuildContext context) {
     final profile = ref.watch(profileProvider);
     final runs = ref.watch(runHistoryProvider);
+    final session = ref.watch(authSessionProvider);
+    final canChange = session is AuthSignedIn && session.user.university != null && session.user.canChangeUniversity;
 
     return Scaffold(
       backgroundColor: SisoColors.bg,
@@ -100,6 +104,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
                 error: (e, _) => _ErrorBox(onRetry: () => ref.invalidate(profileProvider)),
               ),
+              if (canChange)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const Key('profile_change_university'),
+                    icon: const Icon(Icons.swap_horiz, size: 18),
+                    label: const Text('Đổi Trường (trước Phiên chạy đầu tiên của Mùa)'),
+                    onPressed: () async {
+                      await Navigator.of(context)
+                          .push(MaterialPageRoute<void>(builder: (_) => const UniversityPickerScreen()));
+                      ref.invalidate(profileProvider);
+                    },
+                  ),
+                ),
               const SizedBox(height: 22),
               const Text('Lịch sử Phiên chạy', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 10),

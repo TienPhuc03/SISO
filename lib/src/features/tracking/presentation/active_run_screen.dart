@@ -770,7 +770,7 @@ class _SummaryScreen extends ConsumerWidget {
                           children: [
                             CampusDot(color: parseHexColor(campus.color), size: 8),
                             const SizedBox(width: 6),
-                            Text(campus.shortCode,
+                            Text(campus.shortName,
                                 style: const TextStyle(
                                     fontSize: 11, fontWeight: FontWeight.w600, color: SisoColors.primaryDark)),
                           ],
@@ -798,7 +798,7 @@ class _SummaryScreen extends ConsumerWidget {
                             Row(
                               children: [
                                 Expanded(
-                                  child: Text('+$kmText km cho ${campus?.shortCode ?? 'trường'}',
+                                  child: Text('+$kmText km cho ${campus?.shortName ?? 'trường'}',
                                       style: const TextStyle(
                                           fontSize: 15, fontWeight: FontWeight.w700, color: SisoColors.successText)),
                                 ),

@@ -70,10 +70,34 @@ export class UniversityDto {
   @MaxLength(100)
   name: string;
 
-  @ApiPropertyOptional({ example: 'hutech.edu.vn', description: 'Đuôi email gốc; subdomain tự được chấp nhận' })
+  @ApiPropertyOptional({ example: 'HUTECH', description: 'Tên ngắn hiển thị trong app; bỏ trống = shortCode' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  shortName?: string | null;
+
+  @ApiPropertyOptional({ example: 'hutech.edu.vn', nullable: true, description: 'Chỉ để tham khảo, không dùng để đăng nhập' })
+  @IsOptional()
   @Matches(DOMAIN, { message: 'emailDomain phải là tên miền chữ thường, ví dụ hutech.edu.vn' })
   @MaxLength(50)
-  emailDomain: string;
+  emailDomain?: string | null;
+
+  @ApiPropertyOptional({ example: 'Bình Thạnh', description: 'Một quận trong bảng districts; quyết định Cụm' })
+  @IsString()
+  @MaxLength(60)
+  district: string;
+
+  @ApiPropertyOptional({ example: 'UEH', nullable: true, description: 'Thương hiệu chung của các cơ sở' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  parentName?: string | null;
+
+  @ApiPropertyOptional({ example: 'kinh te ueh', nullable: true, description: 'Từ khoá tìm thêm' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  aliases?: string | null;
 
   @ApiPropertyOptional({ example: '#FFCC00' })
   @Matches(HEX, { message: 'hexColor phải có dạng #RRGGBB' })
@@ -88,6 +112,12 @@ export class UniversityDto {
   @IsOptional()
   @IsUrl({ protocols: ['https'], require_protocol: true })
   logoUrl?: string | null;
+}
+
+export class MergeUniversityDto {
+  @ApiPropertyOptional({ description: 'Trường giữ lại; Sinh viên, Ô đất, Quỹ Km và Quán quân của Trường bị gộp chuyển sang đây' })
+  @IsUUID()
+  targetId: string;
 }
 
 export class UpdateArenaDto {

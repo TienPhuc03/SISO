@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/siso_theme.dart';
 
-enum SisoTab { map, leaderboard }
+enum SisoTab { map, leaderboard, forum }
 
-/// Thanh điều hướng nổi: Bản đồ · nút tròn "Chạy" nhô lên · Xếp hạng.
+/// Thanh điều hướng nổi: Bản đồ · Diễn đàn · nút tròn "Chạy" nhô lên · Xếp hạng.
 class SisoBottomNav extends StatelessWidget {
   const SisoBottomNav({
     super.key,
@@ -12,6 +12,7 @@ class SisoBottomNav extends StatelessWidget {
     required this.onMap,
     required this.onRun,
     required this.onLeaderboard,
+    required this.onForum,
     this.onRunLongPress,
   });
 
@@ -19,6 +20,7 @@ class SisoBottomNav extends StatelessWidget {
   final VoidCallback onMap;
   final VoidCallback onRun;
   final VoidCallback onLeaderboard;
+  final VoidCallback onForum;
 
   /// Nhấn giữ nút "Chạy" mở màn Ghi log cảm biến (issue #8; ẩn, dùng được cả bản release IPA).
   final VoidCallback? onRunLongPress;
@@ -44,12 +46,28 @@ class SisoBottomNav extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
+                    // Hai nửa bằng nhau để nút "Chạy" luôn ở giữa.
                     Expanded(
-                      child: _Tab(
-                        icon: Icons.map_outlined,
-                        label: 'Bản đồ',
-                        active: active == SisoTab.map,
-                        onTap: onMap,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _Tab(
+                              icon: Icons.map_outlined,
+                              label: 'Bản đồ',
+                              active: active == SisoTab.map,
+                              onTap: onMap,
+                            ),
+                          ),
+                          Expanded(
+                            child: _Tab(
+                              key: const Key('forum_button'),
+                              icon: Icons.forum_outlined,
+                              label: 'Diễn đàn',
+                              active: active == SisoTab.forum,
+                              onTap: onForum,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 78),

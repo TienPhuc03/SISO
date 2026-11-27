@@ -69,17 +69,22 @@ describe('NotBannedGuard', () => {
   afterEach(() => jest.useRealTimers());
 
   it('không bị cấm -> cho qua', async () => {
-    const { ds } = dataSource({ id: 'u1', role: 'user', banned_until: null });
+    const { ds } = dataSource({ id: 'u1', role: 'user', banned_until: null, university_id: 'uni-1' });
     await expect(new NotBannedGuard(ds).canActivate(ctx('u1'))).resolves.toBe(true);
   });
 
   it('lệnh cấm đã hết hạn -> cho qua', async () => {
-    const { ds } = dataSource({ id: 'u1', banned_until: new Date('2026-11-22T00:00:00Z') });
+    const { ds } = dataSource({ id: 'u1', banned_until: new Date('2026-11-22T00:00:00Z'), university_id: 'uni-1' });
     await expect(new NotBannedGuard(ds).canActivate(ctx('u1'))).resolves.toBe(true);
   });
 
   it('đang bị cấm -> 403 ERR_106', async () => {
     const { ds } = dataSource({ id: 'u1', banned_until: new Date('2026-11-30T00:00:00Z') });
     expect(await codeOf(new NotBannedGuard(ds).canActivate(ctx('u1')))).toBe('ERR_106');
+  });
+
+  it('chưa chọn Trường -> 403 ERR_109', async () => {
+    const { ds } = dataSource({ id: 'u1', role: 'user', banned_until: null, university_id: null as unknown as string });
+    expect(await codeOf(new NotBannedGuard(ds).canActivate(ctx('u1')))).toBe('ERR_109');
   });
 });

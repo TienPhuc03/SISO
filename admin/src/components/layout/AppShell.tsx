@@ -4,6 +4,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   LogOut,
+  MessagesSquare,
   Map,
   Menu,
   Monitor,
@@ -35,6 +36,7 @@ const NAV = [
   { to: '/overview', label: 'Tổng quan', icon: LayoutDashboard },
   { to: '/seasons', label: 'Mùa giải & Trường', icon: Trophy },
   { to: '/students', label: 'Sinh viên', icon: Users },
+  { to: '/forum', label: 'Diễn đàn', icon: MessagesSquare },
   { to: '/actions', label: 'Nhật ký admin', icon: ClipboardList },
 ]
 

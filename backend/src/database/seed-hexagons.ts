@@ -19,13 +19,15 @@ export const SEED_RESOLUTION = 10;
 
 export interface ArenaFeature {
   type: 'Feature';
-  properties: { name: string; description?: string; source?: string };
+  /** `cluster`: mã Cụm (THU_DUC, CENTRAL, NORTH, SOUTH); bỏ trống = NORTH (Đấu trường Bình Thạnh cũ). */
+  properties: { name: string; description?: string; source?: string; cluster?: string };
   geometry: { type: 'Polygon'; coordinates: number[][][] };
 }
 
 export interface ArenaSeed {
   name: string;
   description: string | null;
+  cluster: string;
   /** Polygon GeoJSON gốc, `[lng, lat]`. */
   geometry: ArenaFeature['geometry'];
   /** Ô thuộc Đấu trường này, đã loại các ô trùng với Đấu trường đứng trước. */
@@ -51,6 +53,7 @@ export function buildSeedPlan(features: ArenaFeature[]): ArenaSeed[] {
     return {
       name: f.properties.name,
       description: f.properties.description ?? null,
+      cluster: f.properties.cluster ?? 'NORTH',
       geometry: f.geometry,
       cells,
       overlapDropped: all.length - cells.length,
@@ -90,13 +93,14 @@ async function applyPlan(plan: ArenaSeed[]): Promise<void> {
     await client.query('BEGIN');
     for (const arena of plan) {
       const { rows } = await client.query(
-        `INSERT INTO public.arenas (name, description, boundary_polygon, total_hexes)
-         VALUES ($1, $2, ST_SetSRID(ST_GeomFromGeoJSON($3), 4326), $4)
+        `INSERT INTO public.arenas (name, description, boundary_polygon, total_hexes, cluster_code)
+         VALUES ($1, $2, ST_SetSRID(ST_GeomFromGeoJSON($3), 4326), $4, $5)
          ON CONFLICT (name) DO UPDATE
            SET description = EXCLUDED.description,
-               boundary_polygon = EXCLUDED.boundary_polygon
+               boundary_polygon = EXCLUDED.boundary_polygon,
+               cluster_code = EXCLUDED.cluster_code
          RETURNING id`,
-        [arena.name, arena.description, JSON.stringify(arena.geometry), arena.cells.length],
+        [arena.name, arena.description, JSON.stringify(arena.geometry), arena.cells.length, arena.cluster],
       );
       const arenaId: string = rows[0].id;
 

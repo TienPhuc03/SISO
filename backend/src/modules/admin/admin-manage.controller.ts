@@ -8,6 +8,7 @@ import { StudentsService } from './students.service';
 import { PageQueryDto } from './dto/admin-query.dto';
 import {
   CreateSeasonDto,
+  MergeUniversityDto,
   StatsRangeQueryDto,
   StudentQueryDto,
   UniversityDto,
@@ -78,7 +79,7 @@ export class AdminManageController {
   // ---------- Trường ----------
 
   @Post('universities')
-  @ApiOperation({ summary: 'Thêm Trường (đuôi email có hiệu lực đăng nhập ngay ở backend)' })
+  @ApiOperation({ summary: 'Thêm Trường (cơ sở thi đấu, đã duyệt)' })
   async createUniversity(@Request() req, @Body() dto: UniversityDto) {
     return BaseResponseDto.ok('Đã thêm Trường.', await this.catalog.createUniversity(req.user.userId, dto));
   }
@@ -87,6 +88,18 @@ export class AdminManageController {
   @ApiOperation({ summary: 'Sửa Trường' })
   async updateUniversity(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UniversityDto) {
     return BaseResponseDto.ok('Đã cập nhật Trường.', await this.catalog.updateUniversity(req.user.userId, id, dto));
+  }
+
+  @Post('universities/:id/verify')
+  @ApiOperation({ summary: 'Duyệt Trường Sinh viên tự thêm' })
+  async verifyUniversity(@Request() req, @Param('id', ParseUUIDPipe) id: string) {
+    return BaseResponseDto.ok('Đã duyệt Trường.', await this.catalog.verifyUniversity(req.user.userId, id));
+  }
+
+  @Post('universities/:id/merge')
+  @ApiOperation({ summary: 'Gộp Trường trùng vào Trường khác (chuyển Sinh viên, Ô đất, Quỹ Km, Quán quân rồi xoá)' })
+  async mergeUniversity(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() dto: MergeUniversityDto) {
+    return BaseResponseDto.ok('Đã gộp Trường.', await this.catalog.mergeUniversity(req.user.userId, id, dto));
   }
 
   @Delete('universities/:id')

@@ -11,9 +11,24 @@ export interface Page<T> {
 export interface University {
   id: string
   shortCode: string
+  /** Tên ngắn hiển thị trong app */
+  shortName: string
   name: string
-  emailDomain: string
+  emailDomain: string | null
   hexColor: string
+  district: string | null
+  clusterCode: string | null
+  parentName: string | null
+  aliases: string | null
+  /** false = Sinh viên tự thêm, chờ duyệt */
+  verified: boolean
+  studentCount: number
+}
+
+/** GET /universities: Cụm và quận (kèm Cụm). */
+export interface UniversityCatalog {
+  clusters: { code: string; name: string }[]
+  districts: { name: string; clusterCode: string }[]
 }
 
 export interface GigoLog {

@@ -13,7 +13,7 @@ async function loadAccount(dataSource: DataSource, context: ExecutionContext) {
   if (!userId) return null;
   return dataSource
     .getRepository(User)
-    .findOne({ where: { id: userId }, select: { id: true, role: true, banned_until: true } });
+    .findOne({ where: { id: userId }, select: { id: true, role: true, banned_until: true, university_id: true } });
 }
 
 /** Đặt SAU JwtAuthGuard: chỉ cho user có role = 'admin'. */
@@ -30,7 +30,10 @@ export class AdminGuard implements CanActivate {
   }
 }
 
-/** Đặt SAU JwtAuthGuard: chặn Sinh viên đang bị cấm gửi telemetry / kết thúc Phiên chạy. */
+/**
+ * Đặt SAU JwtAuthGuard: chặn gửi telemetry / kết thúc Phiên chạy / chiếm đất khi Sinh viên đang bị cấm (ERR_106)
+ * hoặc chưa chọn Trường (ERR_109: km và Ô đất không có Trường nào để cộng).
+ */
 @Injectable()
 export class NotBannedGuard implements CanActivate {
   constructor(private readonly dataSource: DataSource) {}
@@ -44,6 +47,9 @@ export class NotBannedGuard implements CanActivate {
           timeZone: 'Asia/Ho_Chi_Minh',
         })}.`,
       });
+    }
+    if (!user?.university_id) {
+      throw new ForbiddenException({ code: 'ERR_109', message: 'Bạn cần chọn Trường trước (để chạy, đăng bài, tym, bình luận).' });
     }
     return true;
   }

@@ -9,14 +9,14 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { MailService } from './mail/mail.service';
+import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 import { InMemoryOtpStore, OTP_STORE } from './otp/otp-store';
 import { AUTH_THROTTLE_ERROR, AUTH_THROTTLE_TTL_MS } from './auth-throttle';
 import { User } from '../../entities/user.entity';
-import { University } from '../../entities/university.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, University]),
+    TypeOrmModule.forFeature([User]),
     // Giới hạn request theo IP cho Auth (chống spam gửi OTP); limit cụ thể đặt ở từng route
     ThrottlerModule.forRoot({
       throttlers: [{ name: 'default', ttl: AUTH_THROTTLE_TTL_MS, limit: 30 }],
@@ -37,6 +37,7 @@ import { University } from '../../entities/university.entity';
     AuthService,
     JwtStrategy,
     MailService,
+    GoogleIdTokenVerifier,
     { provide: OTP_STORE, useClass: InMemoryOtpStore },
   ],
   exports: [AuthService, JwtStrategy, PassportModule],
