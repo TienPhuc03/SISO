@@ -10,7 +10,7 @@ import '../domain/auth_user.dart';
 import '../providers/auth_provider.dart';
 import 'verify_screen.dart';
 
-/// [Dev 1] Màn hình Đăng nhập bằng Email Sinh viên (HUTECH, UEF, UTH, FTU2, HIU).
+/// [Dev 1] Màn hình Đăng nhập: Google (qua Firebase) hoặc email bất kỳ + OTP.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -58,6 +58,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
       );
+    } on SisoException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = unexpectedAuthError);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _google() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final user = await ref.read(authRepositoryProvider).signInWithGoogle();
+      if (user != null) ref.read(authSessionProvider.notifier).signedIn(user);
     } on SisoException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
@@ -125,7 +143,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Nhập email trường cấp để đại diện tranh tài',
+            'Đăng nhập rồi chọn trường bạn muốn cống hiến',
             style: TextStyle(fontSize: 14, color: SisoColors.body, height: 1.5),
           ),
           const SizedBox(height: 16),
@@ -138,10 +156,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const Row(
                   children: [
                     Expanded(
-                      child: Text('Email sinh viên',
+                      child: Text('Email',
                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SisoColors.ink)),
                     ),
-                    Text('Tên miền .edu.vn', style: TextStyle(fontSize: 11, color: SisoColors.caption)),
+                    Text('Nhận mã OTP qua email', style: TextStyle(fontSize: 11, color: SisoColors.caption)),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -154,11 +172,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onFieldSubmitted: (_) => _submit(),
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: SisoColors.ink),
                   decoration: InputDecoration(
-                    hintText: 'nguyenvana@hutech.edu.vn',
+                    hintText: 'nguyenvana@gmail.com',
                     hintStyle: const TextStyle(color: SisoColors.caption),
                     filled: true,
                     fillColor: SisoColors.bg,
-                    prefixIcon: const Icon(Icons.school_outlined, color: SisoColors.body, size: 20),
+                    prefixIcon: const Icon(Icons.mail_outline, color: SisoColors.body, size: 20),
                     contentPadding: const EdgeInsets.symmetric(vertical: 15),
                     enabledBorder: _inputBorder(SisoColors.border),
                     focusedBorder: _inputBorder(SisoColors.primary, 2),
@@ -169,31 +187,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     if (value == null || value.trim().isEmpty) {
                       return 'Vui lòng không để trống email';
                     }
-                    if (!isValidCampusEmail(value)) {
-                      return 'SISO hiện chỉ hỗ trợ HUTECH, UEF, UTH, FTU2, HIU';
+                    if (!isValidEmail(value)) {
+                      return 'Email không hợp lệ';
                     }
                     return null;
                   },
-                ),
-                const SizedBox(height: 14),
-                const Row(
-                  children: [
-                    Expanded(
-                      child: Text('Đang hỗ trợ 5 trường',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: SisoColors.caption)),
-                    ),
-                    Text('Bình Thạnh',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: SisoColors.primary)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    for (final (i, (name, color)) in supportedCampuses.indexed) ...[
-                      if (i > 0) const SizedBox(width: 6),
-                      Expanded(child: _CampusChip(name: name, color: color)),
-                    ],
-                  ],
                 ),
               ],
             ),
@@ -221,6 +219,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     children: [Text('Nhận mã OTP'), SizedBox(width: 8), Icon(Icons.arrow_forward, size: 20)],
                   ),
           ),
+          if (ref.read(authRepositoryProvider).googleAvailable) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('login_google'),
+              onPressed: _loading ? null : _google,
+              icon: const Icon(Icons.account_circle_outlined, size: 20),
+              label: const Text('Tiếp tục với Google'),
+            ),
+          ],
           const SizedBox(height: 16),
           const Text(
             'Bằng việc tiếp tục, bạn đồng ý với quy chế thi đấu và chiếm đất hợp lệ tại Đấu trường SISO.',
@@ -236,49 +243,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: color, width: width),
       );
-}
-
-/// 5 trường đang hỗ trợ, theo bảng màu trong thiết kế.
-const supportedCampuses = [
-  ('HUTECH', Color(0xFFFFCC00)),
-  ('UEF', Color(0xFFFFFFFF)),
-  ('UTH', Color(0xFF002B49)),
-  ('FTU2', Color(0xFF8A0000)),
-  ('HIU', Color(0xFFF2711C)),
-];
-
-class _CampusChip extends StatelessWidget {
-  const _CampusChip({required this.name, required this.color});
-
-  final String name;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: SisoColors.bg,
-        border: Border.all(color: SisoColors.border),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CampusDot(color: color),
-          const SizedBox(width: 4),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(name,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: SisoColors.ink)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// Minh hoạ phía trên: khuôn viên trường, các ô lục giác sáng màu trường và hai người chạy.

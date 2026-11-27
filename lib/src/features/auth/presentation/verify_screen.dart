@@ -132,6 +132,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                     onPressed: () => Navigator.of(context).maybePop(),
                   ),
                   const SizedBox(height: 24),
+                  if (campus != null) ...[
                   Container(
                     padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
                     decoration: BoxDecoration(
@@ -144,14 +145,15 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                       children: [
                         CampusDot(color: parseHexColor(campus.color), size: 8),
                         const SizedBox(width: 6),
-                        Text(campus.shortCode,
+                        Text(campus.shortName,
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
+                  ],
                   Text(
-                    campus.name,
+                    campus?.name ?? 'Xác thực email',
                     style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, height: 1.28),
                   ),
                   const SizedBox(height: 8),

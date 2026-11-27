@@ -137,7 +137,8 @@ class PushNotifier extends StateNotifier<String?> {
 
   Future<void> _apply(AuthSession session) async {
     if (session is AuthChecking || !identical(session, _latest)) return;
-    final topic = session is AuthSignedIn ? universityTopic(session.user.university.id) : null;
+    final uniId = session is AuthSignedIn ? session.user.university?.id : null;
+    final topic = uniId == null ? null : universityTopic(uniId);
     try {
       final current = state;
       if (current != null && current != topic) {

@@ -2,9 +2,6 @@
 class SisoErrorCodes {
   SisoErrorCodes._();
 
-  /// ERR_101: Email không thuộc danh sách trường Bình Thạnh
-  static const String invalidDomain = 'ERR_101';
-
   /// ERR_102: Mã OTP sai hoặc đã hết hạn
   static const String otpInvalid = 'ERR_102';
 
@@ -38,6 +35,20 @@ class SisoErrorCodes {
   /// ERR_106: Tài khoản đang bị admin khoá; không gửi telemetry / kết thúc Phiên chạy được (HTTP 403)
   static const String accountBanned = 'ERR_106';
 
+  /// ERR_109: Chưa chọn Trường; không gửi telemetry / chiếm đất được (HTTP 403)
+  static const String noUniversity = 'ERR_109';
+
+  /// ERR_112: Đang khoá Trường theo Mùa giải; ERR_113: quận không hợp lệ khi thêm Trường
+  static const String universityLocked = 'ERR_112';
+  static const String invalidDistrict = 'ERR_113';
+
+  /// ERR_110: Máy chủ chưa bật đăng nhập Google; ERR_111: Firebase ID token sai hoặc email chưa xác minh
+  static const String googleDisabled = 'ERR_110';
+  static const String googleTokenInvalid = 'ERR_111';
+
+  /// Lỗi phía client: Firebase Auth không đăng nhập Google được (không có trong bảng mã của backend)
+  static const String googleFailed = 'ERR_GOOGLE';
+
   /// ERR_206: Điểm GPS nằm ngoài thời gian của cửa sổ cảm biến; chỉ bỏ cửa sổ đó, Phiên chạy tiếp tục
   static const String invalidGpsPoints = 'ERR_206';
 
@@ -58,6 +69,9 @@ class SisoErrorCodes {
 
   /// ERR_305: Đường biên vòng khép có ô không nằm trên vệt GPS thật của Phiên chạy
   static const String routeMismatch = 'ERR_305';
+
+  /// ERR_306: Đấu trường thuộc Cụm khác; Phiên chạy chỉ được cộng km (Chạy tự do)
+  static const String otherCluster = 'ERR_306';
 }
 
 class SisoException implements Exception {

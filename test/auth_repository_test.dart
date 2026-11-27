@@ -71,10 +71,11 @@ void main() {
   final now = DateTime(2026, 11, 5, 8);
   late InMemoryTokenStorage storage;
 
-  AuthRepository repoWith(ResponseBody Function(RequestOptions) handler) {
+  AuthRepository repoWith(ResponseBody Function(RequestOptions) handler,
+      {Future<String?> Function()? googleIdToken}) {
     final dio = Dio(BaseOptions(baseUrl: 'http://test'))
       ..httpClientAdapter = FakeAdapter(handler);
-    return AuthRepository(dio: dio, storage: storage, clock: () => now);
+    return AuthRepository(dio: dio, storage: storage, clock: () => now, googleIdToken: googleIdToken);
   }
 
   setUp(() {
@@ -82,50 +83,21 @@ void main() {
     ApiClient.setAccessToken(null);
   });
 
-  group('isValidCampusEmail', () {
-    test('chấp nhận 5 trường, không phân biệt hoa thường, có subdomain', () {
-      for (final email in [
-        'a@hutech.edu.vn',
-        'A@UEF.EDU.VN',
-        ' b@ut.edu.vn ',
-        'c@ftu.edu.vn',
-        'd@hiu.vn',
-        'e@st.hutech.edu.vn',
-      ]) {
-        expect(isValidCampusEmail(email), isTrue, reason: email);
+  group('isValidEmail', () {
+    test('chấp nhận email bất kỳ đúng dạng', () {
+      for (final email in ['a@gmail.com', ' A@UEF.EDU.VN ', 'e@st.hutech.edu.vn']) {
+        expect(isValidEmail(email), isTrue, reason: email);
       }
     });
 
-    test('từ chối email ngoài trường hoặc giả mạo đuôi', () {
-      for (final email in [
-        'a@gmail.com',
-        'a@fakehutech.edu.vn',
-        'a@hutech.edu.vn.evil.com',
-        '@hutech.edu.vn',
-        'hutech.edu.vn',
-        'a@b@hutech.edu.vn',
-      ]) {
-        expect(isValidCampusEmail(email), isFalse, reason: email);
+    test('từ chối chuỗi không phải email', () {
+      for (final email in ['@gmail.com', 'gmail.com', 'a@b@c.com', 'a@gmail', 'a b@c.com']) {
+        expect(isValidEmail(email), isFalse, reason: email);
       }
     });
   });
 
   group('requestOtp', () {
-    test('email sai trường: ném ERR_101, không gọi server', () async {
-      var called = false;
-      final repo = repoWith((_) {
-        called = true;
-        return jsonBody(200, {});
-      });
-
-      await expectLater(
-        repo.requestOtp('a@gmail.com'),
-        throwsA(isA<SisoException>()
-            .having((e) => e.code, 'code', SisoErrorCodes.invalidDomain)),
-      );
-      expect(called, isFalse);
-    });
-
     test('thành công: gửi email đã chuẩn hoá, đọc BaseResponseDto', () async {
       late RequestOptions sent;
       final repo = repoWith((o) {
@@ -144,11 +116,11 @@ void main() {
 
       final result = await repo.requestOtp('  SV@Hutech.edu.vn ');
 
-      expect(sent.path, '/api/v1/auth/edu-login');
+      expect(sent.path, '/api/v1/auth/email-login');
       expect(sent.data, {'email': 'sv@hutech.edu.vn'});
       expect(result.email, 'sv@hutech.edu.vn');
       expect(result.resendAfterSeconds, 60);
-      expect(result.university.shortCode, 'HUTECH');
+      expect(result.university?.shortCode, 'HUTECH');
       expect(result.sentAt, now);
       expect(result.resendWaitSeconds(now), 60);
       expect(
@@ -198,6 +170,65 @@ void main() {
     });
   });
 
+  group('email thường và Google', () {
+    final token = fakeJwt(DateTime(2026, 11, 12));
+    const noSchool = {'id': 'u2', 'email': 'a@gmail.com', 'displayName': 'a', 'university': null};
+
+    test('requestOtp: gmail chưa có Trường -> university = null', () async {
+      final repo = repoWith((_) => jsonBody(200, {
+            'success': true,
+            'message': 'ok',
+            'data': {'email': 'a@gmail.com', 'expiresInSeconds': 300, 'resendAfterSeconds': 60, 'university': null},
+          }));
+
+      expect((await repo.requestOtp('a@gmail.com')).university, isNull);
+    });
+
+    test('signInWithGoogle: gửi Firebase ID token, lưu phiên như OTP', () async {
+      late RequestOptions sent;
+      final repo = repoWith((o) {
+        sent = o;
+        return jsonBody(200, {
+          'success': true,
+          'data': {'accessToken': token, 'user': noSchool},
+        });
+      }, googleIdToken: () async => 'firebase-id-token');
+
+      final user = await repo.signInWithGoogle();
+
+      expect(sent.path, '/api/v1/auth/google');
+      expect(sent.data, {'idToken': 'firebase-id-token'});
+      expect(user!.university, isNull);
+      expect(storage.values[AuthRepository.tokenKey], token);
+      expect(ApiClient.accessToken, token);
+      expect(repo.googleAvailable, isTrue);
+    });
+
+    test('signInWithGoogle: người dùng huỷ -> null, không gọi server, không lưu gì', () async {
+      var called = false;
+      final repo = repoWith((_) {
+        called = true;
+        return jsonBody(200, {});
+      }, googleIdToken: () async => null);
+
+      expect(await repo.signInWithGoogle(), isNull);
+      expect(called, isFalse);
+      expect(storage.values, isEmpty);
+    });
+
+    test('server từ chối token Google -> SisoException giữ mã backend', () async {
+      final repo = repoWith(
+        (_) => jsonBody(401, {'success': false, 'code': 'ERR_111', 'message': 'Phiên Google không hợp lệ'}),
+        googleIdToken: () async => 'bad',
+      );
+
+      await expectLater(
+        repo.signInWithGoogle(),
+        throwsA(isA<SisoException>().having((e) => e.code, 'code', SisoErrorCodes.googleTokenInvalid)),
+      );
+    });
+  });
+
   group('verifyOtp', () {
     test('thành công: lưu JWT + user vào storage và gắn token cho ApiClient',
         () async {
@@ -210,7 +241,7 @@ void main() {
 
       final user = await repo.verifyOtp('sv@hutech.edu.vn', '123456');
 
-      expect(user.university.shortCode, 'HUTECH');
+      expect(user.university?.shortCode, 'HUTECH');
       expect(storage.values[AuthRepository.tokenKey], token);
       expect(jsonDecode(storage.values[AuthRepository.userKey]!)['id'], 'u1');
       expect(ApiClient.accessToken, token);

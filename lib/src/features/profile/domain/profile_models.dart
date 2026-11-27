@@ -33,7 +33,7 @@ class Profile {
       personalKm: (json['personalKm'] as num?)?.toDouble() ?? 0,
       completedRuns: (json['completedRuns'] as num?)?.toInt() ?? 0,
       avatarUrl: json['avatarUrl'] as String?,
-      campusShortCode: campus?['shortCode'] as String?,
+      campusShortCode: (campus?['shortName'] ?? campus?['shortCode']) as String?,
       campusColor: campus?['color'] as String?,
     );
   }
