@@ -1,4 +1,4 @@
-# SISO (STEP IN STEP OUT) — ĐẠI CHIẾN ĐẠI HỌC BÌNH THẠNH
+# SISO (STEP IN STEP OUT) — ĐẠI CHIẾN ĐẠI HỌC TP. HỒ CHÍ MINH
 > **Ứng dụng Gamified Running & Chiếm Lãnh Thổ Liên Trường (Location-Based Turf War)**  
 > **Đồ án Thực tế Công nghệ Phần mềm — Nhóm 2 Kỹ sư Full-stack**
 
@@ -6,152 +6,144 @@
 [![NestJS](https://img.shields.io/badge/NestJS-10.x-E0234E?logo=nestjs)](https://nestjs.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%20PostGIS-336791?logo=postgresql)](https://www.postgresql.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Cloud-3ECF8E?logo=supabase)](https://supabase.com)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://www.docker.com)
+[![Firebase](https://img.shields.io/badge/Firebase-Auth%20%2B%20FCM-FFCA28?logo=firebase)](https://firebase.google.com)
 [![Uber H3](https://img.shields.io/badge/Uber%20H3-Res%2010-000000)](https://h3geo.org)
 
 ---
 
 ## 1. GIỚI THIỆU DỰ ÁN
-**SISO (Step In Step Out)** là nền tảng thể thao điện tử đô thị (Location-Based Turf War) dành cho sinh viên 5 trường đại học tại Quận Bình Thạnh (HUTECH, UEF, UTH, FTU2, HIU). 
-* **Lưới lục giác Uber H3:** Bản đồ thành phố được chia thành hàng triệu ô lục giác chuẩn Resolution 10 (~65m).
-* **Chiếm đất khép vòng:** Sinh viên chạy khép kín các cung đường tại các Đấu trường mở (Sala, Vạn Phúc, Landmark 81, Bờ kè Thanh Đa) để nhuộm màu lãnh thổ cho trường mình.
-* **Động cơ Anti-GIGO:** Tích hợp bộ lọc 4 tầng (Kalman + Phân tích phổ FFT nhịp bước chân từ cảm biến gia tốc $50\text{Hz}$) để ngăn chặn triệt để hành vi đi xe máy rà chậm 12km/h hoặc Fake GPS.
-* **Bộ đếm Song song & Quỹ Km:** Sinh viên về quê vẫn có thể chạy đánh lẻ để kéo điểm % Km Thể Thao của trường lên bảng xếp hạng.
+**SISO (Step In Step Out)** là trò chơi chạy bộ chiếm lãnh thổ cho Sinh viên các trường đại học / cao đẳng ở TP.HCM. Thuật ngữ dùng thống nhất theo [`GLOSSARY.md`](GLOSSARY.md).
+* **4 Cụm thi đấu:** các Trường xếp hạng riêng trong Cụm của mình: Thủ Đức (KĐT ĐHQG), Trung tâm, Bình Thạnh - Phú Nhuận - Gò Vấp, Khu Nam. Mỗi Trường là **một cơ sở**; danh mục gốc 51 cơ sở, Sinh viên tự thêm Trường chưa có (chờ admin duyệt).
+* **Lưới lục giác Uber H3:** bản đồ chia thành Ô đất H3 Resolution 10 (~65 m).
+* **13 Đấu trường:** vùng mở có ranh giới từ OpenStreetMap (KĐT Sala, Landmark 81, Bờ kè Thanh Đa, Vạn Phúc, Thủ Thiêm, Nguyễn Huệ, Phú Mỹ Hưng…), mỗi Đấu trường thuộc một Cụm. Chạy khép vòng trong Đấu trường cùng Cụm để Chiếm, Tuần tra hoặc Công phá Ô đất.
+* **Anti-GIGO:** 4 Cổng kiểm định phía server (Danh tính, Động học, Sinh trắc FFT nhịp bước từ gia tốc kế 50 Hz, Hình học) chặn đi xe máy rà chậm và Fake GPS.
+* **Bộ đếm song song:** Sức mạnh Tổng hợp = 50% % Lãnh thổ + 50% % Km trong Cụm; Chạy tự do ở bất kỳ đâu vẫn cộng Quỹ Km cho Trường.
+* **Mùa giải:** kết thúc theo `end_date`, mỗi Cụm có một Quán quân vào Đại sảnh Danh vọng. Trường đã chọn khoá đến hết Mùa.
+* **Diễn đàn:** Bài đăng có chữ, tối đa 4 ảnh, đính kèm Phiên chạy hợp lệ; Tym, bình luận, báo cáo.
 
 ---
 
 ## 2. KIẾN TRÚC HỆ THỐNG
-Dự án được xây dựng theo mô hình **3-Tier Architecture độc lập chuẩn Enterprise**:
-1. **Frontend (Mobile Client):** Viết bằng **Flutter (Dart 3.x)**, sử dụng `flutter_map`, `h3_flutter`, `sensors_plus`, `Riverpod`, giao tiếp qua `Dio` và `Socket.io client`.
-2. **Backend (Application Server):** Viết bằng **NestJS (TypeScript)** theo chuẩn Clean Architecture, tích hợp Swagger OpenAPI 3.0, WebSocket Gateway và thuật toán FFT Anti-GIGO.
-3. **Database (Data Tier):** Lưu trữ trên **Supabase Cloud (PostgreSQL 15 + PostGIS)** và cache Redis 7.
+**3 tầng độc lập**, server là nguồn sự thật duy nhất (client chỉ gửi telemetry thô, không chạm DB):
+1. **Mobile Client:** **Flutter (Dart 3.x)** — `flutter_map`, `h3_flutter`, `sensors_plus`, `geolocator`, Riverpod, Dio, `socket_io_client`, Firebase Auth (đăng nhập Google) + FCM (nhắc Tuần tra). Thanh điều hướng: Bản đồ · Diễn đàn · **Chạy** · Xếp hạng · Hồ sơ.
+2. **Backend:** **NestJS (TypeScript)** — module `auth`, `universities`, `telemetry`, `turf`, `realtime`, `leaderboard`, `forum`, `profile`, `notifications`, `admin`; Swagger OpenAPI, Socket.io Gateway `/turf-ws`.
+3. **Database:** **Supabase (PostgreSQL 15 + PostGIS + pg_cron)**, Supabase Storage (ảnh Diễn đàn), Redis 7.
+4. **Web admin** (`admin/`): Vite + React + TS — chống gian lận, bản đồ Lãnh thổ, thống kê, Mùa giải / Trường / Đấu trường / Sinh viên, báo cáo Diễn đàn. Xem [`admin/README.md`](admin/README.md).
 
 ---
 
 ## 3. YÊU CẦU MÔI TRƯỜNG (PREREQUISITES)
-Trước khi bắt đầu, hãy đảm bảo máy tính của bạn đã cài đặt:
-* **Node.js:** Phiên bản `>= 20.x` (khuyên dùng v24 LTS) và `npm >= 10.x`.
-* **Flutter SDK:** Phiên bản `>= 3.2.0` (Dart SDK `>= 3.2.0 < 4.0.0`).
-* **Docker Desktop:** (Tùy chọn nếu muốn chạy cụm Postgres & Redis local).
-* **Git:** Quản lý mã nguồn.
+* **Node.js** `>= 20.x` và `npm >= 10.x`.
+* **Flutter SDK** `>= 3.2.0` (Dart SDK `>= 3.2.0 < 4.0.0`).
+* **Docker Desktop** (tuỳ chọn, chạy Postgres/PostGIS + Redis local).
+* **Firebase project** (tuỳ chọn): bật đăng nhập Google và thông báo đẩy.
 
 ---
 
-## 4. HƯỚNG DẪN CÀI ĐẶT & KHỞI CHẠY HỆ THỐNG
+## 4. HƯỚNG DẪN CÀI ĐẶT & KHỞI CHẠY
 
-### Bước 1: Khởi tạo Cơ sở Dữ liệu (Supabase Cloud)
-1. Đăng nhập vào [Supabase Cloud](https://supabase.com) và tạo một Project mới (tên: `siso-binhthanh-prod`).
-2. Vào **Database -> Extensions**: Bật 2 extension bắt buộc là **`postgis`** và **`pg_cron`**.
-3. Vào **SQL Editor**: Sao chép toàn bộ nội dung file [`backend/src/database/init_schema.sql`](file:///d:/Workspace/ĐACNPM/siso_project/backend/src/database/init_schema.sql) dán vào và bấm **Run**. Script sẽ tự động tạo bảng và nạp sẵn 5 trường đại học cùng các đấu trường lớn.
-4. Lấy thông tin kết nối tại **Project Settings -> Database**:
-   * Host (ví dụ: `db.xxxxxxxxxxxx.supabase.co`)
-   * Port: `5432`
-   * User: `postgres`
-   * Password: Mật khẩu bạn đã đặt khi tạo project.
-
----
-
-### Bước 2: Cài đặt & Khởi chạy Backend (NestJS)
-1. Mở terminal và chuyển vào thư mục `backend`:
+### Bước 1: Cơ sở dữ liệu (Supabase)
+1. Tạo Project trên [Supabase](https://supabase.com); vào **Database → Extensions** bật **`postgis`** và **`pg_cron`**.
+2. **SQL Editor**: chạy toàn bộ [`backend/src/database/init_schema.sql`](backend/src/database/init_schema.sql) (tạo bảng, 4 Cụm, quận, 51 cơ sở, view xếp hạng, bảng Diễn đàn và bucket Storage `forum`).
+3. Chạy riêng [`backend/src/database/season_automation.sql`](backend/src/database/season_automation.sql) (job `pg_cron`: đóng Mùa giải, Hao mòn 24h/48h, kết thúc Phiên bỏ dở; chạy lại được nhiều lần).
+4. Nạp 13 Đấu trường và Ô đất H3 (sau khi cấu hình `backend/.env` ở Bước 2):
    ```bash
    cd backend
-   ```
-2. Cấu hình biến môi trường:
-   Sao chép `.env.example` thành `.env` và điền thông tin Supabase:
-   ```bash
-   cp .env.example .env
-   ```
-   *Kiểm tra file `.env` đã có:*
-   ```env
-   PORT=3000
-   DB_HOST=db.xxxxxxxxxxxx.supabase.co
-   DB_PORT=5432
-   DB_USER=postgres
-   DB_PASSWORD=your_supabase_password
-   DB_NAME=postgres
-   DB_SSL=true
-   REDIS_HOST=localhost
-   REDIS_PORT=6379
-   JWT_SECRET=siso_super_secret_jwt_key_2026
-   ```
-3. Cài đặt các gói thư viện:
-   ```bash
-   npm install
-   ```
-4. Khởi chạy máy chủ ở chế độ phát triển:
-   ```bash
-   npm run start:dev
-   ```
-   * **Swagger API Documentation:** Mở trình duyệt tại [http://localhost:3000/docs](http://localhost:3000/docs)
-   * **WebSocket TurfGateway:** Kết nối tại `ws://localhost:3000/turf-ws`
-
-*(Hoặc nếu chạy hoàn toàn bằng Docker Compose local: `docker-compose up -d`)*.
-
----
-
-### Bước 3: Cài đặt & Khởi chạy Mobile App (Flutter)
-1. Mở terminal mới tại thư mục gốc của dự án:
-   ```bash
-   cd d:\Workspace\ĐACNPM\siso_project
-   ```
-2. Cấu hình biến môi trường cho Mobile:
-   Kiểm tra file `.env` tại thư mục gốc:
-   ```env
-   # Nếu chạy máy ảo Android: http://10.0.2.2:3000
-   # Nếu chạy Chrome hoặc iOS Simulator: http://localhost:3000
-   # Nếu chạy trên điện thoại thật kết nối cùng WiFi: http://<IP_MÁY_TÍNH>:3000
-   API_BASE_URL=http://localhost:3000
-   SOCKET_URL=http://localhost:3000/turf-ws
-   H3_RESOLUTION=10
-   CAMPUS_BOUNDARY=BINH_THANH
-   ```
-3. Tải các dependencies của Flutter:
-   ```bash
-   flutter pub get
-   ```
-4. Khởi chạy ứng dụng:
-   ```bash
-   # Chạy trên trình duyệt Chrome (khuyên dùng để code nhanh UI)
-   flutter run -d chrome
-
-   # Hoặc chạy trên thiết bị di động
-   flutter run
+   npm run seed:hexagons              # xem trước
+   npm run seed:hexagons -- --apply   # ghi vào DB, giữ chủ sở hữu / Độ bền hiện có
    ```
 
----
-
-## 5. HƯỚNG DẪN TEST & KỊCH BẢN DEMO BẢO VỆ
-
-### 5.1. Chạy Tự Động Toàn Bộ Unit Test
+### Bước 2: Backend (NestJS)
 ```bash
-# Test logic Backend (FFT Anti-GIGO & H3 Flood Fill)
-cd backend && npm test
+cd backend
+cp .env.example .env
+npm install
+npm run start:dev
+```
+Các biến trong `backend/.env` (xem chú thích trong `.env.example`):
 
-# Test logic Client (Bộ lọc Kalman)
-cd .. && flutter test
+| Biến | Ý nghĩa |
+| :--- | :--- |
+| `DATABASE_URL` hoặc `DB_HOST/PORT/USER/PASSWORD/NAME`, `DB_SSL` | Kết nối Postgres (Supabase cần `DB_SSL=true`) |
+| `REDIS_HOST`, `REDIS_PORT` | Redis |
+| `JWT_SECRET`, `JWT_EXPIRES_IN` | Ký JWT (mặc định 7 ngày) |
+| `OTP_DEV_MODE`, `SMTP_*`, `MAIL_FROM` | `OTP_DEV_MODE=true`: OTP cố định `123456`, không gửi mail; `false`: gửi OTP qua SMTP |
+| `GOOGLE_APPLICATION_CREDENTIALS` | File service account Firebase; bật đăng nhập Google và FCM. Để trống thì tắt cả hai (`ERR_110`) |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Tải ảnh Diễn đàn; để trống thì chỉ đăng bài chữ (`ERR_114`) |
+| `TELEMETRY_ALLOW_FAST_REPLAY` | Chỉ dùng khi dev: nhận Cửa sổ gửi nhanh hơn thời gian thật (mặc định chặn, `ERR_207`) |
+
+* **Swagger:** [http://localhost:3000/docs](http://localhost:3000/docs)
+* **WebSocket:** `ws://localhost:3000/turf-ws`
+* Hoặc chạy local bằng Docker: `cd backend && docker-compose up -d` (Postgres/PostGIS + Redis + API, tự nạp `init_schema.sql`).
+
+### Bước 3: Mobile App (Flutter)
+Ở thư mục gốc repo:
+```bash
+cp .env.example .env
+flutter pub get
+flutter run -d chrome   # hoặc: flutter run (thiết bị / máy ảo)
+```
+`.env` của app:
+```env
+# Máy ảo Android: http://10.0.2.2:3000 | Chrome / iOS Simulator: http://localhost:3000
+# Điện thoại thật cùng WiFi: http://<IP_MÁY_TÍNH>:3000
+API_BASE_URL=http://localhost:3000
+SOCKET_URL=http://localhost:3000/turf-ws
+H3_RESOLUTION=10
+CAMPUS_BOUNDARY=BINH_THANH
+```
+Đăng nhập Google và thông báo đẩy cần `android/app/google-services.json` / `ios/Runner/GoogleService-Info.plist` (hoặc các biến `FIREBASE_*` trong `.env.example`); thiếu thì app vẫn chạy bằng email + OTP.
+
+### Bước 4 (tuỳ chọn): Web admin
+```bash
+cd admin
+cp .env.example .env   # VITE_API_BASE_URL, mặc định http://localhost:3000
+npm install
+npm run dev            # http://localhost:5173
+```
+Cấp quyền admin bằng SQL theo [`admin/README.md`](admin/README.md).
+
+---
+
+## 5. HƯỚNG DẪN TEST & KỊCH BẢN DEMO
+
+### 5.1. Unit test
+```bash
+cd backend && npm test   # Anti-GIGO, H3 Flood Fill, auth, Trường, Diễn đàn, admin...
+cd .. && flutter test    # Kalman, Tạm dừng, chọn Trường, Bảng xếp hạng, Diễn đàn...
+cd admin && npm test     # tự kiểm bản đồ Lãnh thổ
 ```
 
-### 5.2. Tài Khoản & Kịch Bản Demo Trực Tiếp Trước Hội Đồng
+### 5.2. Kịch bản demo
 
-#### 1. Đăng nhập Email Sinh viên (Tầng 0 - Identity Gate)
-* Nhập email: `nguyenvana@hutech.edu.vn` (hoặc đuôi `@uef.edu.vn`, `@ut.edu.vn`, `@ftu.edu.vn`, `@hiu.vn`).
-* Nhập mã OTP demo: `123456`.
-* Giao diện app ngay lập tức chuyển sang theme màu cờ sắc áo của trường (HUTECH: Vàng - Xanh).
+#### 1. Đăng nhập & chọn Trường (Cổng Danh tính)
+* Nhập **email bất kỳ** (vd. `@gmail.com`), OTP demo `123456` (khi `OTP_DEV_MODE=true`); hoặc bấm **"Tiếp tục với Google"**.
+* Lần đầu đăng nhập: màn **chọn Trường**, tìm không dấu (vd. "kinh te", "hutech"); không thấy thì **Thêm Trường mới** (tên, tên viết tắt, quận → Cụm).
+* Trường đã chọn khoá đến hết Mùa giải; sang Mùa mới được đổi cho tới Phiên chạy hợp lệ đầu tiên (nút "Đổi Trường" ở tab **Hồ sơ**).
 
-#### 2. Test Chống Đi Xe Máy (Tầng 2 - Biometric FFT Gate)
-* **Trường hợp 1 (Chạy bộ thật):** Tốc độ 10–12 km/h, nhịp chân 150–160 bước/phút $\rightarrow$ Hệ thống ghi nhận phiên chạy sạch.
-* **Trường hợp 2 (Kẹp điện thoại lên xe máy đi rà 12km/h):** Vận tốc GPS di chuyển nhưng biên độ dao động đứng nhỏ, tần số rung $> 8\text{Hz}$ $\rightarrow$ Hệ thống lập tức dừng phiên chạy, báo lỗi đỏ: `ERR_202 (VEHICLE_SPEED_MISMATCH)`.
+#### 2. Chống đi xe máy (Cổng Sinh trắc FFT)
+* **Chạy bộ thật:** 10–12 km/h, nhịp chân 150–160 bước/phút → Phiên chạy hợp lệ.
+* **Kẹp điện thoại lên xe máy rà 12 km/h:** tốc độ GPS cao nhưng không có Nhịp bước chạy → Phiên bị loại `ERR_202 (VEHICLE_SPEED_MISMATCH)`.
 
-#### 3. Test Chiếm Đất Khép Vòng Realtime
-* Chạy khép 1 vòng lặp quanh Đấu trường $\rightarrow$ Toàn bộ các ô lục giác H3 bên trong đổi sang màu trường.
-* Đồng thời kiểm tra trên chiếc điện thoại thứ 2 (của đối thủ): Bản đồ đổi màu trong vòng $< 300\text{ms}$ qua WebSocket.
+#### 3. Tạm dừng & Chạy tự do
+* Bấm Tạm dừng / Tiếp tục; đứng yên thì app Tự tạm dừng. Tạm dừng 25 phút app nhắc, 30 phút tự kết thúc.
+* Kết thúc Phiên chạy → km hợp lệ cộng vào Quỹ Km; Bảng xếp hạng Cụm hiện Mùa, thời gian còn lại.
 
-#### 4. Chế độ Giả lập (Demo Simulator khi mất sóng GPS trong nhà)
-* Nếu phòng bảo vệ đồ án bị che khuất vệ tinh, mở menu ẩn và chọn **"Phát lại Log Chạy Landmark 81"** để diễn tập mượt mà toàn bộ quy trình!
+#### 4. Chiếm đất & Realtime
+* Chạy khép vòng ở Đấu trường cùng Cụm → Ô đất bên trong đổi màu Trường; máy thứ hai thấy đổi màu qua WebSocket (< 300 ms). Đấu trường Cụm khác trả `ERR_306`.
+* Lưu ý: app Flutter hiện chưa gọi `claim-loop` (mọi Phiên chạy kết thúc như Chạy tự do); thử bằng Swagger theo [`docs/test_swagger_module2.md`](docs/test_swagger_module2.md).
+
+#### 5. Diễn đàn
+* Tab **Diễn đàn**: đăng bài kèm ảnh và Phiên chạy, Tym, bình luận, báo cáo; admin xử lý báo cáo trên web admin.
+
+#### 6. Phát lại log (khi mất GPS trong phòng bảo vệ)
+* Màn Chạy → **"Nguồn dữ liệu" → "Phát lại log"**, chọn file `.jsonl` trong [`assets/telemetry_logs/`](assets/telemetry_logs/README.md). Nhấn giữ nút **"Chạy"** để mở màn Ghi log cảm biến.
 
 ---
 
 ## 6. TÀI LIỆU CHI TIẾT
-* 📘 [Đặc tả Yêu cầu Nghiệp vụ & Kiến trúc (SRS ISO 29148)](docs/SRS_SISO_DA_CHIEN_BINH_THANH.md)
-* 📕 [Sổ tay Kỹ thuật & Hướng dẫn Lập trình (Developer Handbook)](docs/DEVELOPER_HANDBOOK.md)
-* 📅 [Kế hoạch Phát triển 30 Ngày cho 2 Thành viên Full-stack](docs/TIMELINE_30_DAYS.md)
+* 📘 [Đặc tả Yêu cầu (SRS 4.0, ISO 29148)](docs/SRS_SISO_DA_CHIEN_BINH_THANH.md)
+* 📗 [Thuật ngữ (GLOSSARY)](GLOSSARY.md) và [quyết định kiến trúc (ADR)](docs/adr/)
+* 📕 [Sổ tay Kỹ thuật (Developer Handbook)](docs/DEVELOPER_HANDBOOK.md)
+* 📅 [Kế hoạch phát triển (Timeline v3)](docs/SISO_Timeline_v3.md)
+* 🛠️ [Web admin](admin/README.md)

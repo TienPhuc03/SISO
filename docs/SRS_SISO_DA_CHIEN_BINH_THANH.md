@@ -28,8 +28,9 @@ Tài liệu là căn cứ kỹ thuật pháp lý cao nhất để 2 thành viên
 | :--- | :--- | :--- | :--- |
 | 3.0 | 22/10/2026 | Bản nền: 5 trường Bình Thạnh, đăng nhập email trường `@*.edu.vn`. | — |
 | 4.0 | 27/11/2026 | (1) Đăng nhập email bất kỳ + OTP hoặc Google (Firebase); bỏ ràng buộc email trường. (2) Sinh viên tự chọn Trường; Trường là một cơ sở; Sinh viên tự thêm Trường chưa có. (3) Xếp hạng, % Lãnh thổ, % Km, Quán quân tính theo 4 Cụm; Đấu trường thuộc một Cụm. (4) Khoá Trường theo Mùa giải. (5) Diễn đàn: bài đăng có ảnh, đính kèm Phiên chạy, Tym, bình luận, báo cáo. (6) Bảng xếp hạng hiện thời gian còn lại của Mùa giải. (7) Bảng mã lỗi cập nhật theo code. (8) 9 Đấu trường mới cho Cụm Thủ Đức / Trung tâm / Khu Nam; danh mục gốc 51 cơ sở. | `GLOSSARY.md`, `docs/adr/0002-xep-hang-theo-cum-va-co-so.md`, `backend/src/database/init_schema.sql` mục 6C, 7, 12 |
+| 4.0.1 | 28/11/2026 | Hồ sơ thành một tab trên thanh điều hướng (Bản đồ · Diễn đàn · Chạy · Xếp hạng · Hồ sơ); nút "Đổi Trường" và Lịch sử Phiên chạy nằm trong tab này (WF08). | `lib/src/features/map/presentation/siso_bottom_nav.dart` |
 
-> **Lưu ý phạm vi bản 4.0:** chỉ các mục liên quan tới 7 thay đổi trên được viết lại. Các điểm lệch có từ bản 3.0 nhưng không thuộc phạm vi này (thuật toán Cổng Sinh trắc mục 17 vẫn mô tả Zero-Crossing trong khi code dùng FFT; mục 19 trộn bước xử lý với trạng thái) được giữ nguyên và liệt kê ở cuối tài liệu.
+> **Lưu ý phạm vi bản 4.0:** chỉ các mục liên quan tới 8 thay đổi trên được viết lại. Các điểm lệch có từ bản 3.0 nhưng không thuộc phạm vi này (thuật toán Cổng Sinh trắc mục 17 vẫn mô tả Zero-Crossing trong khi code dùng FFT; mục 19 trộn bước xử lý với trạng thái) được giữ nguyên và liệt kê ở cuối tài liệu.
 
 ---
 
@@ -221,7 +222,7 @@ sequenceDiagram
 
 <a id="c8"></a>
 ### 8. Danh mục Actors & Sơ đồ Use Case
-* **Sinh viên:** đăng nhập, chọn Trường, chạy khép vòng ở Đấu trường thuộc Cụm của Trường mình hoặc Chạy tự do ở bất kỳ đâu, xem Bảng xếp hạng và dùng Diễn đàn. Sinh viên chưa chọn Trường chỉ xem được Bảng xếp hạng và Diễn đàn.
+* **Sinh viên:** đăng nhập, chọn Trường, chạy khép vòng ở Đấu trường thuộc Cụm của Trường mình hoặc Chạy tự do ở bất kỳ đâu, xem Bảng xếp hạng, dùng Diễn đàn và xem Hồ sơ (Lịch sử Phiên chạy, đổi Trường). Thanh điều hướng của ứng dụng: Bản đồ · Diễn đàn · nút "Chạy" · Xếp hạng · Hồ sơ. Sinh viên chưa chọn Trường chỉ xem được Bảng xếp hạng và Diễn đàn.
 * **Hệ thống Tự động (pg_cron):** Hao mòn Ô đất (mỗi giờ), kết thúc Phiên bỏ dở (mỗi 5 phút), đóng Mùa giải và ghi Quán quân từng Cụm (mỗi ngày 00:00 giờ Việt Nam).
 * **Quản trị viên:** xử lý nhật ký Anti-GIGO, khoá Sinh viên, quản lý Mùa giải / Trường / Đấu trường, duyệt và gộp Trường Sinh viên tự thêm, kiểm duyệt Diễn đàn (web admin).
 
@@ -778,7 +779,7 @@ Sang Mùa mới, Sinh viên được đổi Trường cho tới Phiên chạy h�
 4. Ứng dụng gọi `PUT /api/v1/universities/mine` với `{ universityId }` hoặc `{ name, shortName, district }`.
 5. Server khoá dòng `users`, tìm Trường (hoặc tìm trùng / tạo mới với `is_verified = false`), kiểm tra luật khoá (BR08). Được phép thì ghi `university_id` và `university_season`; đang khoá thì trả `ERR_112`.
 6. Server trả JWT và hồ sơ mới; ứng dụng cập nhật phiên, đăng ký topic thông báo của Trường mới, vào Bản đồ.
-7. Đổi Trường về sau: từ hộp thoại đầu Mùa (WF07) hoặc nút "Đổi Trường" trong Hồ sơ, chỉ hiện khi `canChangeUniversity = true`.
+7. Đổi Trường về sau: từ hộp thoại đầu Mùa (WF07) hoặc nút "Đổi Trường" trong tab Hồ sơ (thanh điều hướng), chỉ hiện khi `canChangeUniversity = true`.
 
 <a id="h30"></a>
 ### 30. WF09: Diễn đàn: đăng bài, Tym, bình luận, báo cáo
