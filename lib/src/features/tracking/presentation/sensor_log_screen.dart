@@ -112,8 +112,8 @@ class _SensorLogScreenState extends ConsumerState<SensorLogScreen> {
     final stats = await _recorder.stop();
     await ref.read(screenAwakeProvider).disable();
     if (!mounted) return;
-    setState(() => _message =
-        'Đã lưu: ${stats.accelCount} mẫu IMU, ${stats.gpsCount} lần GPS trong ${_fmt(stats.elapsed)}.');
+    setState(() =>
+        _message = 'Đã lưu: ${stats.accelCount} mẫu IMU, ${stats.gpsCount} lần GPS trong ${_fmt(stats.elapsed)}.');
     await _refreshFiles();
   }
 
@@ -131,6 +131,8 @@ class _SensorLogScreenState extends ConsumerState<SensorLogScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
+        actionsOverflowAlignment: OverflowBarAlignment.center,
+        actionsOverflowDirection: VerticalDirection.up,
         title: const Text('Xoá log?'),
         content: Text('${info.name} sẽ bị xoá khỏi máy, không khôi phục được.'),
         actions: [

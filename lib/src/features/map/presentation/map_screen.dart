@@ -13,6 +13,7 @@ import '../../forum/presentation/forum_screen.dart';
 import '../../leaderboard/presentation/leaderboard_screen.dart';
 import '../../leaderboard/providers/season_rank_provider.dart';
 import '../../profile/presentation/profile_button.dart';
+import '../../profile/presentation/profile_screen.dart';
 import '../../tracking/presentation/active_run_screen.dart';
 import '../../tracking/presentation/sensor_log_screen.dart';
 import '../data/user_location_source.dart';
@@ -238,8 +239,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                                 child: const HexIcon(size: 16),
                               ),
                               const SizedBox(width: 8),
-                              const Text(MapScreen.title,
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                              const Text(MapScreen.title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                             ],
                           ),
                         ),
@@ -263,7 +263,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           ),
                           const SizedBox(width: 8),
                         ],
-                        const ProfileButton(),
+                        const ProfileAvatar(),
                         const SizedBox(width: 8),
                         const LogoutButton(),
                       ],
@@ -320,6 +320,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               onRun: _openRun,
               onLeaderboard: _openLeaderboard,
               onForum: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ForumScreen())),
+              onProfile: () =>
+                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ProfileScreen())),
               onRunLongPress: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => const SensorLogScreen()),
               ),

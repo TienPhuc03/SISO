@@ -5,6 +5,7 @@ import '../../../core/theme/siso_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../leaderboard/presentation/leaderboard_screen.dart';
 import '../../map/presentation/siso_bottom_nav.dart';
+import '../../profile/presentation/profile_screen.dart';
 import '../../tracking/presentation/active_run_screen.dart';
 import '../domain/forum_models.dart';
 import '../providers/forum_providers.dart';
@@ -138,6 +139,8 @@ class ForumScreen extends ConsumerWidget {
                 onLeaderboard: () => Navigator.of(context)
                     .pushReplacement(MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen())),
                 onForum: () {},
+                onProfile: () => Navigator.of(context)
+                    .pushReplacement(MaterialPageRoute<void>(builder: (_) => const ProfileScreen())),
               ),
             ),
         ],

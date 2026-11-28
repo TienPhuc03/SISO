@@ -40,6 +40,8 @@ class _UniversityPickerScreenState extends ConsumerState<UniversityPickerScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        actionsOverflowAlignment: OverflowBarAlignment.center,
+        actionsOverflowDirection: VerticalDirection.up,
         title: Text('Cống hiến cho $label?'),
         content: Text(
           '$clusterName.\n\nBạn sẽ chạy cho Trường này đến hết ${season == null ? 'Mùa giải' : 'Mùa $season'}; '
@@ -114,7 +116,8 @@ class _UniversityPickerScreenState extends ConsumerState<UniversityPickerScreen>
             IconButton(
               tooltip: 'Xem bảng xếp hạng',
               icon: const Icon(Icons.leaderboard_outlined),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen())),
+              onPressed: () =>
+                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen())),
             ),
             const Padding(padding: EdgeInsets.only(right: 12), child: LogoutButton()),
           ],
