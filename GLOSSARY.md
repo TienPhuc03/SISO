@@ -146,6 +146,28 @@ _Tránh dùng_: Status, Bài viết, Post (trong văn bản tiếng Việt)
 Lượt thích một Bài đăng; mỗi Sinh viên một Tym mỗi bài, bấm lại thì bỏ.
 _Tránh dùng_: Like, Thả tim, Reaction
 
+**Bình luận** (`Comment`):
+Lời đáp một tầng dưới Bài đăng (1–1000 ký tự); tác giả sửa hoặc xoá được.
+_Tránh dùng_: Reply, Comment (trong văn bản tiếng Việt), Phản hồi
+
+**Báo cáo** (`Report`):
+Việc Sinh viên đánh dấu một Bài đăng hoặc Bình luận vi phạm, kèm lý do không bắt buộc, để Quản trị viên xử lý; mỗi người báo cáo một mục một lần.
+_Tránh dùng_: Tố cáo, Flag, Report (trong văn bản tiếng Việt)
+
+### Quản trị
+
+**Quản trị viên** (`Admin`):
+Tài khoản có `role = admin`, làm việc trên web admin; không thuộc Trường nào nên không chạy hay đăng bài.
+_Tránh dùng_: Admin (trong văn bản tiếng Việt), Mod, Người kiểm duyệt
+
+**Trường chờ duyệt** (`Unverified University`):
+Trường do Sinh viên tự thêm, vẫn tính điểm ngay nhưng chờ Quản trị viên **Duyệt**, sửa, **Gộp** vào Trường có sẵn (chuyển Sinh viên, Ô đất, Quỹ Km, Quán quân rồi xoá bản trùng) hoặc xoá.
+_Tránh dùng_: Trường tạm, Trường nháp
+
+**Khoá tài khoản** (`Ban`):
+Việc Quản trị viên chặn một Sinh viên tới một thời điểm (hoặc vĩnh viễn): không gửi được Phiên chạy, chiếm đất hay viết Diễn đàn, và các Phiên đang chạy bị loại. Khác với khoá Trường theo Mùa giải (không đổi được Trường).
+_Tránh dùng_: Cấm, Ban (trong văn bản tiếng Việt)
+
 ### Chống gian lận
 
 **Anti-GIGO**:
