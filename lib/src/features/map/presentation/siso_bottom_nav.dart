@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/siso_theme.dart';
 
-enum SisoTab { map, leaderboard, forum }
+enum SisoTab { map, leaderboard, forum, profile }
 
-/// Thanh điều hướng nổi: Bản đồ · Diễn đàn · nút tròn "Chạy" nhô lên · Xếp hạng.
+/// Thanh điều hướng nổi: Bản đồ · Diễn đàn · nút tròn "Chạy" nhô lên · Xếp hạng · Hồ sơ.
 class SisoBottomNav extends StatelessWidget {
   const SisoBottomNav({
     super.key,
@@ -13,6 +13,7 @@ class SisoBottomNav extends StatelessWidget {
     required this.onRun,
     required this.onLeaderboard,
     required this.onForum,
+    required this.onProfile,
     this.onRunLongPress,
   });
 
@@ -21,6 +22,7 @@ class SisoBottomNav extends StatelessWidget {
   final VoidCallback onRun;
   final VoidCallback onLeaderboard;
   final VoidCallback onForum;
+  final VoidCallback onProfile;
 
   /// Nhấn giữ nút "Chạy" mở màn Ghi log cảm biến (issue #8; ẩn, dùng được cả bản release IPA).
   final VoidCallback? onRunLongPress;
@@ -72,12 +74,27 @@ class SisoBottomNav extends StatelessWidget {
                     ),
                     const SizedBox(width: 78),
                     Expanded(
-                      child: _Tab(
-                        key: const Key('leaderboard_button'),
-                        icon: Icons.bar_chart_rounded,
-                        label: 'Xếp hạng',
-                        active: active == SisoTab.leaderboard,
-                        onTap: onLeaderboard,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _Tab(
+                              key: const Key('leaderboard_button'),
+                              icon: Icons.bar_chart_rounded,
+                              label: 'Xếp hạng',
+                              active: active == SisoTab.leaderboard,
+                              onTap: onLeaderboard,
+                            ),
+                          ),
+                          Expanded(
+                            child: _Tab(
+                              key: const Key('profile_button'),
+                              icon: Icons.person_outline,
+                              label: 'Hồ sơ',
+                              active: active == SisoTab.profile,
+                              onTap: onProfile,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

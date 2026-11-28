@@ -6,6 +6,7 @@ import '../../../core/theme/siso_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../forum/presentation/forum_screen.dart';
 import '../../map/presentation/siso_bottom_nav.dart';
+import '../../profile/presentation/profile_screen.dart';
 import '../../tracking/presentation/active_run_screen.dart';
 import '../../university/domain/university_catalog.dart';
 import '../../university/providers/university_providers.dart';
@@ -118,6 +119,8 @@ class LeaderboardScreen extends ConsumerWidget {
                   onLeaderboard: () {},
                   onForum: () => Navigator.of(context)
                       .pushReplacement(MaterialPageRoute<void>(builder: (_) => const ForumScreen())),
+                  onProfile: () => Navigator.of(context)
+                      .pushReplacement(MaterialPageRoute<void>(builder: (_) => const ProfileScreen())),
                 ),
               ),
           ],

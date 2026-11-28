@@ -12,6 +12,8 @@ Future<bool> confirmForumDelete(BuildContext context, String what) async =>
     await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        actionsOverflowAlignment: OverflowBarAlignment.center,
+        actionsOverflowDirection: VerticalDirection.up,
         title: Text('Xoá $what?'),
         content: Text(what == 'bài'
             ? 'Bài bị xoá hẳn cùng ảnh, tym và bình luận. Không hoàn tác được.'
@@ -54,6 +56,8 @@ class _ReportDialogState extends State<_ReportDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        actionsOverflowAlignment: OverflowBarAlignment.center,
+        actionsOverflowDirection: VerticalDirection.up,
         title: Text('Báo cáo ${widget.what}'),
         content: TextField(
           key: const Key('report_reason'),
@@ -97,6 +101,8 @@ class _EditCommentDialogState extends State<_EditCommentDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        actionsOverflowAlignment: OverflowBarAlignment.center,
+        actionsOverflowDirection: VerticalDirection.up,
         title: const Text('Sửa bình luận'),
         content:
             TextField(key: const Key('comment_edit'), controller: _text, maxLength: 1000, maxLines: 4, minLines: 1),

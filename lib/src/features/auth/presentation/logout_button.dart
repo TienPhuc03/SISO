@@ -23,6 +23,8 @@ class LogoutButton extends ConsumerWidget {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
+            actionsOverflowAlignment: OverflowBarAlignment.center,
+            actionsOverflowDirection: VerticalDirection.up,
             title: const Text('Đăng xuất?'),
             content: const Text('Bạn sẽ cần nhập lại email và mã OTP để vào lại.'),
             actions: [
