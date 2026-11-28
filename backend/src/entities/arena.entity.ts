@@ -23,6 +23,10 @@ export class Arena {
   @Column({ default: true })
   is_active: boolean;
 
+  /** Cụm của Đấu trường; chỉ Sinh viên cùng Cụm chiếm đất được. */
+  @Column({ length: 20, default: 'NORTH' })
+  cluster_code: string;
+
   @CreateDateColumn()
   created_at: Date;
 

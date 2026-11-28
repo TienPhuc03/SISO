@@ -68,11 +68,14 @@ Future<Map<String, List<LatLng>>> _fakeBoundaries(List<String> ids) async => {
 
 void main() {
   group('PlayArea / cameraTargetFor', () {
-    test('trong khu Bình Thạnh: căn tới vị trí người dùng', () {
+    test('trong khu thi đấu 4 Cụm: căn tới vị trí người dùng', () {
       const hutech = LatLng(10.8016, 106.7146);
       expect(cameraTargetFor(hutech), hutech);
       expect(PlayArea.contains(PlayArea.landmark81), isTrue);
       expect(PlayArea.contains(const LatLng(10.7705, 106.7215)), isTrue); // Sala
+      expect(PlayArea.contains(const LatLng(10.8815, 106.7950)), isTrue); // Hồ Đá ĐHQG
+      expect(PlayArea.contains(const LatLng(10.7210, 106.7300)), isTrue); // Nam Viên, Phú Mỹ Hưng
+      expect(PlayArea.contains(const LatLng(10.7880, 106.6938)), isTrue); // Lê Văn Tám
     });
 
     test('không có GPS hoặc ở ngoài khu (vd. Hà Nội): giữ nguyên camera', () {

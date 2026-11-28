@@ -178,7 +178,7 @@ describe('TurfService: claimLoop', () => {
     id: USER_ID,
     email: 'sv@hutech.edu.vn',
     display_name: 'SV',
-    university: { id: HUTECH_ID, name: 'HUTECH', short_code: 'HUTECH', hex_color: '#FFCC00' },
+    university: { id: HUTECH_ID, name: 'HUTECH', short_code: 'HUTECH', hex_color: '#FFCC00', district: 'Bình Thạnh' },
   };
   // Ô thật ở HUTECH (trong khu thi đấu), đặt tên theo thứ tự sắp xếp.
   const [a, b, c] = h3.gridDisk(h3.latLngToCell(10.8016, 106.7146, 10), 1).sort();
@@ -188,8 +188,13 @@ describe('TurfService: claimLoop', () => {
   let tx: { findOne: jest.Mock; find: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
   let gateway: { broadcastHexClaimed: jest.Mock };
   let service: TurfService;
+  let arenaRepo: { findOne: jest.Mock; manager: { query: jest.Mock } };
 
   beforeEach(() => {
+    arenaRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: ARENA_ID, boundary_polygon: null, cluster_code: 'NORTH' }),
+      manager: { query: jest.fn().mockResolvedValue([{ cluster_code: 'NORTH' }]) },
+    };
     tx = {
       findOne: jest.fn().mockResolvedValue(activeSession),
       find: jest.fn().mockResolvedValue(routeThrough([a, b])),
@@ -202,10 +207,35 @@ describe('TurfService: claimLoop', () => {
     service = new TurfService(
       hexRepo as unknown as Repository<H3Hexagon>,
       { findOne: jest.fn().mockResolvedValue(user) } as unknown as Repository<User>,
-      { findOne: jest.fn().mockResolvedValue({ id: ARENA_ID, boundary_polygon: null }) } as unknown as Repository<Arena>,
+      arenaRepo as unknown as Repository<Arena>,
       { calculateEnclosedHexes: () => [c, a, b] } as unknown as H3Service,
       gateway as unknown as TurfGateway,
     );
+  });
+
+  describe('chỉ chiếm đất Đấu trường cùng Cụm (ERR_306)', () => {
+    it('Đấu trường Cụm khác: từ chối, không ghi gì, Phiên chạy vẫn ACTIVE để kết thúc như Chạy tự do', async () => {
+      arenaRepo.findOne.mockResolvedValue({ id: ARENA_ID, boundary_polygon: null, cluster_code: 'SOUTH' });
+
+      await expect(service.claimLoop(USER_ID, dto)).rejects.toMatchObject({ response: { code: 'ERR_306' } });
+      expect(tx.query).not.toHaveBeenCalled();
+      expect(tx.update).not.toHaveBeenCalled();
+    });
+
+    it('không gửi arenaId: khu thi đấu Bình Thạnh thuộc Cụm NORTH', async () => {
+      arenaRepo.manager.query.mockResolvedValue([{ cluster_code: 'THU_DUC' }]);
+      await expect(service.claimLoop(USER_ID, { ...dto, arenaId: undefined })).rejects.toMatchObject({
+        response: { code: 'ERR_306' },
+      });
+
+      arenaRepo.manager.query.mockResolvedValue([{ cluster_code: 'NORTH' }]);
+      await expect(service.claimLoop(USER_ID, { ...dto, arenaId: undefined })).resolves.toMatchObject({ claimedCount: 3 });
+    });
+
+    it('Trường chưa có quận (không rõ Cụm): từ chối', async () => {
+      arenaRepo.manager.query.mockResolvedValue([]);
+      await expect(service.claimLoop(USER_ID, dto)).rejects.toMatchObject({ response: { code: 'ERR_306' } });
+    });
   });
 
   it('khoá đúng Phiên chạy của chính Sinh viên', async () => {
@@ -356,11 +386,14 @@ describe('TurfService: claimLoop với H3Service thật (không giả lập floo
 
   let tx: { findOne: jest.Mock; find: jest.Mock; query: jest.Mock; increment: jest.Mock; update: jest.Mock };
   let gateway: { broadcastHexClaimed: jest.Mock };
-  let arenaRepo: { findOne: jest.Mock };
+  let arenaRepo: { findOne: jest.Mock; manager: { query: jest.Mock } };
   let service: TurfService;
 
   beforeEach(() => {
-    arenaRepo = { findOne: jest.fn().mockResolvedValue({ id: ARENA_ID, boundary_polygon: square(10.8016, 106.7146) }) };
+    arenaRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: ARENA_ID, boundary_polygon: square(10.8016, 106.7146), cluster_code: 'NORTH' }),
+      manager: { query: jest.fn().mockResolvedValue([{ cluster_code: 'NORTH' }]) },
+    };
     tx = {
       findOne: jest.fn().mockResolvedValue({ id: SESSION_ID, user_id: USER_ID, status: 'ACTIVE', distance_meters: 1200 }),
       find: jest.fn().mockResolvedValue(routeThrough(ring)),
@@ -374,7 +407,7 @@ describe('TurfService: claimLoop với H3Service thật (không giả lập floo
       {
         findOne: jest.fn().mockResolvedValue({
           id: USER_ID,
-          university: { id: HUTECH_ID, short_code: 'HUTECH', hex_color: '#FFCC00' },
+          university: { id: HUTECH_ID, short_code: 'HUTECH', hex_color: '#FFCC00', district: 'Bình Thạnh' },
         }),
       } as unknown as Repository<User>,
       arenaRepo as unknown as Repository<Arena>,

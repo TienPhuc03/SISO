@@ -93,5 +93,18 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- Đăng nhập Google qua Firebase Auth (signInWithProvider): REVERSED_CLIENT_ID và Encoded App ID từ GoogleService-Info.plist -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.901979849852-7ghvgqfp33cjj45l2cc6lo6e5ipbj2l7</string>
+				<string>app-1-901979849852-ios-3cbecac28cd886dff775f9</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

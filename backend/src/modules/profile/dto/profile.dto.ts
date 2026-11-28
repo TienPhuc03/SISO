@@ -16,6 +16,9 @@ export class ProfileUniversityDto {
   @ApiProperty({ example: 'UTH' })
   shortCode: string;
 
+  @ApiProperty({ example: 'UTH', description: 'Tên ngắn hiển thị (short_name, không có thì shortCode)' })
+  shortName: string;
+
   @ApiProperty({ example: 'ĐH Giao thông Vận tải TP.HCM' })
   name: string;
 

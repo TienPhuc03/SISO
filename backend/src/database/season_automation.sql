@@ -18,8 +18,10 @@
 CREATE SCHEMA IF NOT EXISTS private;
 REVOKE ALL ON SCHEMA private FROM PUBLIC;
 
--- Mỗi Mùa giải có tối đa một Quán quân; chặn ghi trùng ở tầng dữ liệu.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_hof_season ON public.hall_of_fame(season_number);
+-- Mỗi Mùa giải mỗi Cụm có tối đa một Quán quân; chặn ghi trùng ở tầng dữ liệu.
+-- Cần cột hall_of_fame.cluster_code (init_schema.sql mục 6C) chạy trước.
+DROP INDEX IF EXISTS public.uq_hof_season;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_hof_season_cluster ON public.hall_of_fame(season_number, cluster_code);
 
 -- Mùa 1 trong seed đã hết hạn (31/10) khi chưa từng thi đấu thật. Nếu giữ nguyên, lần chạy
 -- cron đầu tiên sẽ đóng mùa và xoá bản đồ ngay; kéo về cuối tháng hiện tại để tránh việc đó.
@@ -42,6 +44,7 @@ DECLARE
     v_today date := (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date;
     v_season public.seasons%ROWTYPE;
     v_champion record;
+    v_champions jsonb := '{}'::jsonb;
     v_next_number int;
     v_cleared_hexes int;
 BEGIN
@@ -61,22 +64,22 @@ BEGIN
                                   'season', v_season.season_number);
     END IF;
 
-    -- Hoà điểm: ưu tiên % Đất, rồi % Km, cuối cùng theo mã trường để kết quả luôn xác định.
-    -- Mùa không có hoạt động nào (điểm 0) thì không có Quán quân.
-    SELECT university_id, territory_pct, mileage_pct, composite_power_pct INTO v_champion
-    FROM public.v_campus_live_scores
-    WHERE composite_power_pct > 0
-    ORDER BY composite_power_pct DESC, territory_pct DESC, mileage_pct DESC, short_code ASC
-    LIMIT 1;
-
-    IF FOUND THEN
+    -- Mỗi Cụm một Quán quân. Hoà điểm: ưu tiên % Đất, rồi % Km, cuối cùng theo mã trường để kết quả luôn xác định.
+    -- Cụm không có hoạt động nào (điểm 0) thì không có Quán quân.
+    FOR v_champion IN
+        SELECT DISTINCT ON (cluster_code) cluster_code, university_id, territory_pct, mileage_pct, composite_power_pct
+        FROM public.v_campus_live_scores
+        WHERE composite_power_pct > 0 AND cluster_code IS NOT NULL
+        ORDER BY cluster_code, composite_power_pct DESC, territory_pct DESC, mileage_pct DESC, short_code ASC
+    LOOP
         INSERT INTO public.hall_of_fame
-            (season_number, champion_university_id, territory_pct, mileage_pct, composite_power_pct)
+            (season_number, cluster_code, champion_university_id, territory_pct, mileage_pct, composite_power_pct)
         VALUES
-            (v_season.season_number, v_champion.university_id, v_champion.territory_pct,
+            (v_season.season_number, v_champion.cluster_code, v_champion.university_id, v_champion.territory_pct,
              v_champion.mileage_pct, v_champion.composite_power_pct)
-        ON CONFLICT (season_number) DO NOTHING;
-    END IF;
+        ON CONFLICT (season_number, cluster_code) DO NOTHING;
+        v_champions := v_champions || jsonb_build_object(v_champion.cluster_code, v_champion.university_id);
+    END LOOP;
 
     UPDATE public.h3_hexagons
     SET owner_university_id = NULL, shield_hp = 0, updated_at = now()
@@ -100,7 +103,7 @@ BEGIN
     RETURN jsonb_build_object(
         'closed', true,
         'season', v_season.season_number,
-        'champion', v_champion.university_id,
+        'champions', v_champions,
         'cleared_hexes', v_cleared_hexes,
         'next_season', v_next_number
     );

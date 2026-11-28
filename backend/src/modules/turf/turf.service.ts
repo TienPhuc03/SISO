@@ -20,6 +20,9 @@ export const NEUTRAL_HEX_COLOR = '#44FFFFFF';
 /** Khung bao khu thi đấu Bình Thạnh; khớp PlayArea phía client. */
 export const PLAY_AREA = { minLat: 10.755, maxLat: 10.83, minLng: 106.695, maxLng: 106.745 };
 
+/** Cụm của khu thi đấu Bình Thạnh (Vòng khép không gửi arenaId); khớp COALESCE trong v_campus_live_scores. */
+export const PLAY_AREA_CLUSTER = 'NORTH';
+
 /** Ô biên được lệch tối đa bấy nhiêu vòng ô so với ô có điểm GPS (bù sai số GPS ~20 m và điểm thưa ~1 Hz). */
 export const ROUTE_MATCH_RING = 1;
 
@@ -110,7 +113,8 @@ export class TurfService {
 
     // 1. Tính toán tất cả các ô H3 nằm trong vòng khép kín
     const claimedHexIndexes = this.h3Service.calculateEnclosedHexes(dto.boundaryH3Indexes);
-    await this.assertInsideArena(claimedHexIndexes, dto.arenaId);
+    const arena = await this.assertInsideArena(claimedHexIndexes, dto.arenaId);
+    await this.assertSameCluster(user.university.district, arena?.cluster_code ?? PLAY_AREA_CLUSTER);
 
     // 2. Ghi đất, Km và lịch sử phiên chạy cùng một transaction: lỗi ở bước nào cũng không để lại dữ liệu dở dang.
     const distanceKm = await this.hexRepository.manager.transaction(async (tx) => {
@@ -167,13 +171,14 @@ export class TurfService {
    * Mọi ô chiếm (biên + bên trong) phải nằm trong Đấu trường `arenaId` (tâm ô trong ranh giới, cùng cách
    * seed), hoặc trong khu thi đấu nếu không gửi `arenaId` / Đấu trường chưa có ranh giới.
    */
-  private async assertInsideArena(cells: string[], arenaId?: string): Promise<void> {
+  private async assertInsideArena(cells: string[], arenaId?: string): Promise<Arena | null> {
     let inside = (cell: string) => {
       const [lat, lng] = h3.cellToLatLng(cell);
       return lat >= PLAY_AREA.minLat && lat <= PLAY_AREA.maxLat && lng >= PLAY_AREA.minLng && lng <= PLAY_AREA.maxLng;
     };
+    let arena: Arena | null = null;
     if (arenaId) {
-      const arena = await this.arenaRepository.findOne({ where: { id: arenaId, is_active: true } });
+      arena = await this.arenaRepository.findOne({ where: { id: arenaId, is_active: true } });
       if (!arena) throw arenaNotFound(); // Đấu trường đã tắt coi như không tồn tại, khớp getArenas
       if (arena.boundary_polygon) {
         const arenaCells = new Set(h3.polygonToCells(arena.boundary_polygon.coordinates, H3_RESOLUTION, true));
@@ -186,6 +191,20 @@ export class TurfService {
         message: arenaId
           ? 'OUT_OF_ARENA: Vòng chạy có ô nằm ngoài Đấu trường.'
           : 'OUT_OF_ARENA: Vòng chạy có ô nằm ngoài khu thi đấu Bình Thạnh.',
+      });
+    }
+    return arena;
+  }
+
+  /** Chỉ Sinh viên cùng Cụm mới tác động lên Ô đất của Đấu trường; Cụm khác thì Phiên chạy chỉ là Chạy tự do. */
+  private async assertSameCluster(district: string | null, arenaCluster: string): Promise<void> {
+    const [row] = district
+      ? await this.arenaRepository.manager.query(`SELECT cluster_code FROM public.districts WHERE name = $1`, [district])
+      : [];
+    if (row?.cluster_code !== arenaCluster) {
+      throw new BadRequestException({
+        code: 'ERR_306',
+        message: 'OTHER_CLUSTER: Đấu trường thuộc Cụm khác; Phiên chạy này chỉ được cộng km (Chạy tự do).',
       });
     }
   }

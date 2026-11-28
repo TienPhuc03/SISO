@@ -19,6 +19,7 @@ import { VerifyWindowResponseDto } from './dto/verify-window-response.dto';
 import { FinishSessionDto, FinishSessionResponseDto } from './dto/finish-session.dto';
 import { ListSessionsQueryDto, SessionDetailResponseDto, SessionListResponseDto } from './dto/session-history.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { NotBannedGuard } from '../../common/guards/account.guards';
 import { BaseResponseDto } from '../../common/dto/base-response.dto';
 
 @ApiTags('Telemetry')
@@ -28,7 +29,7 @@ export class TelemetryController {
 
   @Post('verify')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, NotBannedGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Kiểm định một cửa sổ 256 mẫu cảm biến (Cổng Động học + Cổng Sinh trắc)',
@@ -46,6 +47,7 @@ export class TelemetryController {
       'ERR_203 (chưa có tín hiệu vệ tinh, sai số âm hoặc > 20 m), ERR_206 (điểm GPS lệch quá 1 s ngoài thời gian cửa sổ), ERR_207 (cửa sổ đến sớm hơn thời gian thật, vd. gửi dồn): chỉ bỏ cửa sổ này, Phiên chạy tiếp tục.',
   })
   @ApiResponse({ status: 401, description: 'Thiếu hoặc sai JWT' })
+  @ApiResponse({ status: 403, description: 'ERR_106: tài khoản đang bị khoá' })
   @ApiResponse({ status: 404, description: 'ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc đã kết thúc' })
   async verifyTelemetry(
     @Request() req,
@@ -61,7 +63,7 @@ export class TelemetryController {
 
   @Post('finish')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, NotBannedGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Kết thúc Phiên chạy không khép vòng (chạy tự do)',
@@ -72,6 +74,7 @@ export class TelemetryController {
   @ApiOkResponse({ type: FinishSessionResponseDto })
   @ApiResponse({ status: 400, description: 'Phiên chạy đã bị loại (trả mã lý do loại, ví dụ ERR_202)' })
   @ApiResponse({ status: 401, description: 'Thiếu hoặc sai JWT' })
+  @ApiResponse({ status: 403, description: 'ERR_106: tài khoản đang bị khoá' })
   @ApiResponse({ status: 404, description: 'ERR_204: sessionId không tồn tại, của Sinh viên khác, hoặc đã kết thúc' })
   async finishSession(@Request() req, @Body() dto: FinishSessionDto) {
     const result = await this.telemetryService.finishSession(req.user.userId, dto.sessionId);

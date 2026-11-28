@@ -9,12 +9,14 @@ import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import { randomInt, timingSafeEqual } from 'crypto';
 
-import { User } from '../../entities/user.entity';
+import { User, UserRole } from '../../entities/user.entity';
 import { University } from '../../entities/university.entity';
 import { BaseResponseDto } from '../../common/dto/base-response.dto';
-import { matchCampusDomain, normalizeEmail } from './campus-domain';
+import { normalizeEmail } from './normalize-email';
 import { OTP_STORE, OtpStore } from './otp/otp-store';
 import { MailService } from './mail/mail.service';
+import { GoogleIdTokenVerifier } from './google-id-token.verifier';
+import { universityChoice } from '../universities/university-lock';
 
 export const OTP_TTL_MS = 5 * 60 * 1000;
 export const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
@@ -25,7 +27,23 @@ export interface AuthUserView {
   id: string;
   email: string;
   displayName: string;
-  university: { id: string; shortCode: string; name: string; color: string };
+  role: UserRole;
+  /** null = chưa chọn Trường (Sinh viên mới) hoặc admin. */
+  university: UniversityView | null;
+  /** Được chọn / đổi Trường ngay lúc này (luật khoá theo Mùa giải). */
+  canChangeUniversity: boolean;
+  /** Mùa giải đang mở; null nếu không có. */
+  seasonNumber: number | null;
+}
+
+export interface UniversityView {
+  id: string;
+  shortCode: string;
+  /** Tên hiển thị ngắn (short_name, không có thì short_code). */
+  shortName: string;
+  name: string;
+  color: string;
+  clusterCode: string | null;
 }
 
 @Injectable()
@@ -33,17 +51,17 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(University)
-    private readonly universityRepository: Repository<University>,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
     @Inject(OTP_STORE) private readonly otpStore: OtpStore,
+    private readonly googleVerifier: GoogleIdTokenVerifier,
   ) {}
 
-  /** Bước 1: kiểm tra đuôi email trường, sinh OTP và gửi về hộp thư. */
-  async requestEduLogin(rawEmail: string) {
+  /** Bước 1: email bất kỳ, sinh OTP và gửi về hộp thư (OTP là bằng chứng sở hữu email). */
+  async requestEmailLogin(rawEmail: string) {
     const email = normalizeEmail(rawEmail);
-    const university = await this.findUniversityByEmail(email);
+    const university = (await this.userRepository.findOne({ where: { email }, relations: ['university'] }))
+      ?.university;
 
     const now = Date.now();
     const existing = await this.otpStore.get(email);
@@ -77,7 +95,7 @@ export class AuthService {
       email,
       expiresInSeconds: OTP_TTL_MS / 1000,
       resendAfterSeconds: OTP_RESEND_COOLDOWN_MS / 1000,
-      university: this.toUniversityView(university),
+      university: university ? await this.toUniversityView(university) : null,
     });
   }
 
@@ -112,15 +130,28 @@ export class AuthService {
       });
     }
 
-    const university = await this.findUniversityByEmail(email);
-    const user = await this.findOrCreateUser(email, university);
+    const user = await this.findOrCreateUser(email);
     // Xoá OTP sau khi tạo/tìm user thành công: lỗi DB thì người dùng vẫn thử lại được bằng mã cũ
     await this.otpStore.delete(email);
+    return this.issueSession(user.id);
+  }
 
-    return BaseResponseDto.ok('Đăng nhập thành công.', {
-      accessToken: this.signToken(user),
-      user: this.toUserView(user, university),
-    });
+  /** Đăng nhập Google: app đổi Firebase ID token lấy JWT SISO; cùng email với OTP thì cùng tài khoản. */
+  async loginWithGoogle(idToken: string) {
+    const email = normalizeEmail(await this.googleVerifier.verifiedEmail(idToken));
+    return this.issueSession((await this.findOrCreateUser(email)).id);
+  }
+
+  /** JWT mới + hồ sơ mới nhất (Trường, Cụm, quyền đổi Trường). Dùng sau đăng nhập, mở app, đổi Trường. */
+  async issueSession(userId: string, message = 'Đăng nhập thành công.') {
+    const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['university'] });
+    if (!user) {
+      throw new UnauthorizedException({
+        code: 'HTTP_401',
+        message: 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.',
+      });
+    }
+    return BaseResponseDto.ok(message, { accessToken: this.signToken(user), user: await this.toUserView(user) });
   }
 
   /**
@@ -128,20 +159,7 @@ export class AuthService {
    * mở app thì token có lại đủ hạn, không hết hạn giữa chừng khi đang chạy rồi bị đá về Login.
    */
   async getMe(userId: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['university'],
-    });
-    if (!user || !user.university) {
-      throw new UnauthorizedException({
-        code: 'HTTP_401',
-        message: 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.',
-      });
-    }
-    return BaseResponseDto.ok('Lấy thông tin tài khoản thành công.', {
-      accessToken: this.signToken(user),
-      user: this.toUserView(user, user.university),
-    });
+    return this.issueSession(userId, 'Lấy thông tin tài khoản thành công.');
   }
 
   /** JWT hạn theo JWT_EXPIRES_IN (mặc định 7 ngày). */
@@ -155,43 +173,13 @@ export class AuthService {
     });
   }
 
-  private async findUniversityByEmail(email: string): Promise<University> {
-    const domain = matchCampusDomain(email);
-    if (!domain) {
-      throw new BadRequestException({
-        code: 'ERR_101',
-        message:
-          'Email không thuộc danh sách trường đại học hợp lệ tại Bình Thạnh (HUTECH, UEF, UTH, FTU2, HIU).',
-      });
-    }
-    const university = await this.universityRepository.findOne({
-      where: { email_domain: domain },
-    });
-    if (!university) {
-      throw new BadRequestException({
-        code: 'ERR_101',
-        message: 'Không tìm thấy trường đại học tương ứng trong hệ thống.',
-      });
-    }
-    return university;
-  }
-
-  private async findOrCreateUser(email: string, university: University): Promise<User> {
-    const existing = await this.userRepository.findOne({ where: { email } });
-    if (existing) {
-      // User cũ bị tạo thiếu trường (lỗi trước đây) thì gán bù
-      if (!existing.university_id) {
-        existing.university_id = university.id;
-        return this.userRepository.save(existing);
-      }
-      return existing;
-    }
-    const created = this.userRepository.create({
-      email,
-      display_name: email.split('@')[0].slice(0, 50),
-      university_id: university.id,
-    });
-    return this.userRepository.save(created);
+  /** Tài khoản theo email (admin cấp sẵn bằng SQL cũng vào đây); chưa có thì tạo, chưa có Trường. */
+  private async findOrCreateUser(email: string): Promise<User> {
+    const existing = await this.userRepository.findOne({ where: { email }, relations: ['university'] });
+    if (existing) return existing;
+    return this.userRepository.save(
+      this.userRepository.create({ email, display_name: email.split('@')[0].slice(0, 50) }),
+    );
   }
 
   private otpLockedError() {
@@ -211,21 +199,30 @@ export class AuthService {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
-  private toUniversityView(university: University) {
+  private async toUniversityView(university: University): Promise<UniversityView> {
+    const [district] = university.district
+      ? await this.userRepository.manager.query(`SELECT cluster_code FROM public.districts WHERE name = $1`, [university.district])
+      : [];
     return {
       id: university.id,
       shortCode: university.short_code,
+      shortName: university.short_name ?? university.short_code,
       name: university.name,
       color: university.hex_color,
+      clusterCode: district?.cluster_code ?? null,
     };
   }
 
-  private toUserView(user: User, university: University): AuthUserView {
+  private async toUserView(user: User): Promise<AuthUserView> {
+    const { season, lockedReason } = await universityChoice(this.userRepository.manager, user);
     return {
       id: user.id,
       email: user.email,
       displayName: user.display_name,
-      university: this.toUniversityView(university),
+      role: user.role ?? 'user',
+      university: user.university ? await this.toUniversityView(user.university) : null,
+      canChangeUniversity: lockedReason === null,
+      seasonNumber: season,
     };
   }
 }

@@ -11,11 +11,12 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { MailService } from './mail/mail.service';
+import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 import { InMemoryOtpStore, OTP_STORE } from './otp/otp-store';
 import {
   AUTH_THROTTLE_ERROR,
   AUTH_THROTTLE_TTL_MS,
-  EDU_LOGIN_LIMIT_PER_MIN,
+  EMAIL_LOGIN_LIMIT_PER_MIN,
   VERIFY_OTP_LIMIT_PER_MIN,
 } from './auth-throttle';
 import { AllExceptionsFilter } from '../../common/filters/all-exceptions.filter';
@@ -43,14 +44,12 @@ async function buildApp(users: Map<string, User>) {
       return u ? { ...u, university: HUTECH } : null;
     }),
     create: jest.fn((d) => ({ ...d })),
+    manager: { query: jest.fn(async (sql: string) => (sql.includes('FROM public.seasons') ? [] : [{ cluster_code: 'NORTH' }])) },
     save: jest.fn(async (u) => {
       const saved = { id: u.id ?? 'user-1', ...u };
       users.set(saved.id, saved);
       return saved;
     }),
-  };
-  const uniRepo = {
-    findOne: jest.fn(async ({ where }) => (where.email_domain === 'hutech.edu.vn' ? HUTECH : null)),
   };
 
   const moduleRef = await Test.createTestingModule({
@@ -70,7 +69,10 @@ async function buildApp(users: Map<string, User>) {
       { provide: MailService, useValue: { devMode: true, sendOtp: jest.fn() } },
       { provide: OTP_STORE, useClass: InMemoryOtpStore },
       { provide: getRepositoryToken(User), useValue: userRepo },
-      { provide: getRepositoryToken(University), useValue: uniRepo },
+      {
+        provide: GoogleIdTokenVerifier,
+        useValue: { verifiedEmail: jest.fn(async (t: string) => (t === 'good' ? 'g@gmail.com' : Promise.reject(new Error('bad')))) },
+      },
     ],
   }).compile();
 
@@ -92,9 +94,9 @@ describe('AuthController (HTTP)', () => {
 
   afterAll(() => app.close());
 
-  it('luồng đầy đủ: edu-login -> verify-otp -> me', async () => {
+  it('luồng đầy đủ: email-login -> verify-otp -> me', async () => {
     const login = await request(app.getHttpServer())
-      .post('/api/v1/auth/edu-login')
+      .post('/api/v1/auth/email-login')
       .send({ email: 'sv@hutech.edu.vn' })
       .expect(200);
     expect(login.body).toMatchObject({ success: true, data: { email: 'sv@hutech.edu.vn' } });
@@ -113,22 +115,27 @@ describe('AuthController (HTTP)', () => {
     expect(me.body.data.user).toMatchObject({ email: 'sv@hutech.edu.vn', university: { shortCode: 'HUTECH' } });
   });
 
-  it('email ngoài trường -> 400 ERR_101 theo format lỗi chung', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/api/v1/auth/edu-login')
-      .send({ email: 'a@gmail.com' })
-      .expect(400);
-    expect(res.body).toMatchObject({ success: false, code: 'ERR_101', path: '/api/v1/auth/edu-login' });
+  it('email thường (gmail) -> 200, nhận OTP', async () => {
+    await request(app.getHttpServer()).post('/api/v1/auth/email-login').send({ email: 'a@gmail.com' }).expect(200);
+  });
+
+  it('google: token hợp lệ -> 200 kèm JWT', async () => {
+    const res = await request(app.getHttpServer()).post('/api/v1/auth/google').send({ idToken: 'good' }).expect(200);
+    expect(res.body.data).toMatchObject({ accessToken: expect.any(String), user: { email: 'g@gmail.com' } });
+  });
+
+  it('google: thiếu idToken -> 400 (ValidationPipe)', async () => {
+    await request(app.getHttpServer()).post('/api/v1/auth/google').send({}).expect(400);
   });
 
   it('email sai định dạng -> 400 (ValidationPipe)', async () => {
-    const res = await request(app.getHttpServer()).post('/api/v1/auth/edu-login').send({ email: 'abc' }).expect(400);
+    const res = await request(app.getHttpServer()).post('/api/v1/auth/email-login').send({ email: 'abc' }).expect(400);
     expect(res.body.success).toBe(false);
   });
 
   it('trường lạ trong body -> 400 (forbidNonWhitelisted)', async () => {
     await request(app.getHttpServer())
-      .post('/api/v1/auth/edu-login')
+      .post('/api/v1/auth/email-login')
       .send({ email: 'x@hutech.edu.vn', role: 'admin' })
       .expect(400);
   });
@@ -141,7 +148,7 @@ describe('AuthController (HTTP)', () => {
   });
 
   it('OTP sai -> 400 ERR_102', async () => {
-    await request(app.getHttpServer()).post('/api/v1/auth/edu-login').send({ email: 'otp@hutech.edu.vn' }).expect(200);
+    await request(app.getHttpServer()).post('/api/v1/auth/email-login').send({ email: 'otp@hutech.edu.vn' }).expect(200);
     const res = await request(app.getHttpServer())
       .post('/api/v1/auth/verify-otp')
       .send({ email: 'otp@hutech.edu.vn', otp: '000000' })
@@ -174,15 +181,15 @@ describe('AuthController: giới hạn request theo IP', () => {
 
   afterEach(() => app.close());
 
-  it(`edu-login: quá ${EDU_LOGIN_LIMIT_PER_MIN} lần/phút từ 1 IP -> 429 kèm thông báo tiếng Việt`, async () => {
-    for (let i = 0; i < EDU_LOGIN_LIMIT_PER_MIN; i++) {
+  it(`email-login: quá ${EMAIL_LOGIN_LIMIT_PER_MIN} lần/phút từ 1 IP -> 429 kèm thông báo tiếng Việt`, async () => {
+    for (let i = 0; i < EMAIL_LOGIN_LIMIT_PER_MIN; i++) {
       await request(app.getHttpServer())
-        .post('/api/v1/auth/edu-login')
+        .post('/api/v1/auth/email-login')
         .send({ email: `sv${i}@hutech.edu.vn` })
         .expect(200);
     }
     const res = await request(app.getHttpServer())
-      .post('/api/v1/auth/edu-login')
+      .post('/api/v1/auth/email-login')
       .send({ email: 'one-more@hutech.edu.vn' })
       .expect(429);
     expect(res.body).toMatchObject({ success: false, code: 'HTTP_429', message: AUTH_THROTTLE_ERROR });

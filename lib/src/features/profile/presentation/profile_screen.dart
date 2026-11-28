@@ -4,8 +4,13 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/errors/siso_exceptions.dart';
 import '../../../core/theme/siso_theme.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../forum/presentation/forum_screen.dart';
+import '../../leaderboard/presentation/leaderboard_screen.dart';
+import '../../map/presentation/siso_bottom_nav.dart';
 import '../../map/domain/hex_cell.dart' show parseHexColor;
-import '../../tracking/presentation/active_run_screen.dart' show formatDuration;
+import '../../university/presentation/university_picker_screen.dart';
+import '../../tracking/presentation/active_run_screen.dart' show ActiveRunScreen, formatDuration;
 import '../domain/profile_models.dart';
 import '../providers/profile_providers.dart';
 import 'avatar_view.dart';
@@ -54,7 +59,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _editName(String current) async {
     final name = await showDialog<String>(context: context, builder: (_) => _NicknameDialog(initial: current));
     if (name == null || name == current) return;
-    if (name.length < 2) return _showError(const SisoException(code: 'HTTP_400', message: 'Nickname cần ít nhất 2 ký tự.'));
+    if (name.length < 2) {
+      return _showError(const SisoException(code: 'HTTP_400', message: 'Nickname cần ít nhất 2 ký tự.'));
+    }
     await _run(() => ref.read(profileRepositoryProvider).updateDisplayName(name));
   }
 
@@ -62,65 +69,103 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget build(BuildContext context) {
     final profile = ref.watch(profileProvider);
     final runs = ref.watch(runHistoryProvider);
+    final session = ref.watch(authSessionProvider);
+    final canChange = session is AuthSignedIn && session.user.university != null && session.user.canChangeUniversity;
+    final showNav = session is AuthSignedIn && (session.user.university != null || session.user.isAdmin);
 
     return Scaffold(
       backgroundColor: SisoColors.bg,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(profileProvider);
-            ref.invalidate(runHistoryProvider);
-            await ref.read(runHistoryProvider.future).catchError((_) => <RunSummary>[]);
-          },
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
-            children: [
-              Row(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                ref.invalidate(profileProvider);
+                ref.invalidate(runHistoryProvider);
+                await ref.read(runHistoryProvider.future).catchError((_) => <RunSummary>[]);
+              },
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(20, 10, 20, showNav ? 130 : 24),
                 children: [
-                  SisoCircleButton(
-                    icon: Icons.chevron_left,
-                    tooltip: 'Quay lại',
-                    onPressed: () => Navigator.of(context).maybePop(),
+                  Row(
+                    children: [
+                      SisoCircleButton(
+                        icon: Icons.chevron_left,
+                        tooltip: 'Quay lại',
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
+                      const SizedBox(width: 14),
+                      const Text('Hồ sơ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                    ],
                   ),
-                  const SizedBox(width: 14),
-                  const Text('Hồ sơ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 16),
+                  profile.when(
+                    data: (p) => _ProfileCard(
+                      profile: p,
+                      saving: _saving,
+                      onPickAvatar: _saving ? null : _pickAvatar,
+                      onEditName: _saving ? null : () => _editName(p.displayName),
+                    ),
+                    loading: () => const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                    error: (e, _) => _ErrorBox(onRetry: () => ref.invalidate(profileProvider)),
+                  ),
+                  if (canChange)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        key: const Key('profile_change_university'),
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: const Text('Đổi Trường (trước Phiên chạy đầu tiên của Mùa)'),
+                        onPressed: () async {
+                          await Navigator.of(context)
+                              .push(MaterialPageRoute<void>(builder: (_) => const UniversityPickerScreen()));
+                          ref.invalidate(profileProvider);
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 22),
+                  const Text('Lịch sử Phiên chạy', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 10),
+                  ...runs.when(
+                    data: (list) => list.isEmpty
+                        ? [
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 24),
+                              child: Text('Chưa có Phiên chạy nào. Bấm "Chạy" để bắt đầu.',
+                                  textAlign: TextAlign.center, style: TextStyle(color: SisoColors.body)),
+                            ),
+                          ]
+                        : [for (final run in list) _RunTile(run: run)],
+                    loading: () => [
+                      const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+                    ],
+                    error: (e, _) => [_ErrorBox(onRetry: () => ref.invalidate(runHistoryProvider))],
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
-              profile.when(
-                data: (p) => _ProfileCard(
-                  profile: p,
-                  saving: _saving,
-                  onPickAvatar: _saving ? null : _pickAvatar,
-                  onEditName: _saving ? null : () => _editName(p.displayName),
-                ),
-                loading: () => const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-                error: (e, _) => _ErrorBox(onRetry: () => ref.invalidate(profileProvider)),
-              ),
-              const SizedBox(height: 22),
-              const Text('Lịch sử Phiên chạy', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 10),
-              ...runs.when(
-                data: (list) => list.isEmpty
-                    ? [
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Text('Chưa có Phiên chạy nào. Bấm "Chạy" để bắt đầu.',
-                              textAlign: TextAlign.center, style: TextStyle(color: SisoColors.body)),
-                        ),
-                      ]
-                    : [for (final run in list) _RunTile(run: run)],
-                loading: () => [
-                  const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-                ],
-                error: (e, _) => [_ErrorBox(onRetry: () => ref.invalidate(runHistoryProvider))],
-              ),
-            ],
+            ),
           ),
-        ),
+          if (showNav)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SisoBottomNav(
+                active: SisoTab.profile,
+                onMap: () => Navigator.of(context).maybePop(),
+                onRun: () => Navigator.of(context)
+                    .pushReplacement(MaterialPageRoute<void>(builder: (_) => const ActiveRunScreen())),
+                onLeaderboard: () => Navigator.of(context)
+                    .pushReplacement(MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen())),
+                onForum: () =>
+                    Navigator.of(context).pushReplacement(MaterialPageRoute<void>(builder: (_) => const ForumScreen())),
+                onProfile: () {},
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -148,6 +193,8 @@ class _NicknameDialogState extends State<_NicknameDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      actionsOverflowAlignment: OverflowBarAlignment.center,
+      actionsOverflowDirection: VerticalDirection.up,
       title: const Text('Đổi nickname'),
       content: TextField(
         key: const Key('nickname_field'),
@@ -237,7 +284,8 @@ class _ProfileCard extends StatelessWidget {
                       ],
                     ),
                     Text(profile.email,
-                        overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: SisoColors.body)),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5, color: SisoColors.body)),
                     if (profile.campusShortCode case final code?) ...[
                       const SizedBox(height: 6),
                       Row(
@@ -280,8 +328,7 @@ class _Metric extends StatelessWidget {
       children: [
         Text.rich(
           TextSpan(text: value, children: [
-            if (unit != null)
-              TextSpan(text: ' $unit', style: const TextStyle(fontSize: 12, color: SisoColors.body)),
+            if (unit != null) TextSpan(text: ' $unit', style: const TextStyle(fontSize: 12, color: SisoColors.body)),
           ]),
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
         ),
@@ -336,8 +383,7 @@ class _RunTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(formatRunDate(run.startedAt),
-                          style: const TextStyle(fontSize: 12, color: SisoColors.body)),
+                      Text(formatRunDate(run.startedAt), style: const TextStyle(fontSize: 12, color: SisoColors.body)),
                       const SizedBox(height: 4),
                       Text('${viDecimal(run.km, 2)} km · ${formatDuration(run.durationSeconds)}',
                           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
@@ -346,8 +392,7 @@ class _RunTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                Text(statusText,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: statusColor)),
+                Text(statusText, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: statusColor)),
                 const SizedBox(width: 4),
                 const Icon(Icons.chevron_right, color: SisoColors.caption),
               ],

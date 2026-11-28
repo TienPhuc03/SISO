@@ -6,6 +6,8 @@ import '../../../core/theme/siso_theme.dart';
 import '../../map/presentation/map_screen.dart';
 import '../providers/auth_provider.dart';
 import 'login_screen.dart';
+import '../../university/presentation/season_switch_prompt.dart';
+import '../../university/presentation/university_picker_screen.dart';
 
 /// Màn hình gốc: chọn Login hay Bản đồ theo phiên đăng nhập.
 class AuthGate extends ConsumerWidget {
@@ -25,7 +27,8 @@ class AuthGate extends ConsumerWidget {
     return switch (ref.watch(authSessionProvider)) {
       AuthChecking() => const SplashScreen(key: Key('auth_checking')),
       AuthSignedOut() => const LoginScreen(),
-      AuthSignedIn() => const MapScreen(),
+      AuthSignedIn(:final user) when user.university == null && !user.isAdmin => const UniversityPickerScreen(),
+      AuthSignedIn() => const SeasonSwitchPrompt(child: MapScreen()),
     };
   }
 }

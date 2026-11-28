@@ -1,20 +1,36 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:siso_project/src/core/constants/app_constants.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:siso_project/src/core/errors/siso_exceptions.dart';
 import 'package:siso_project/src/core/network/api_client.dart';
 import 'package:siso_project/src/core/storage/token_storage.dart';
 import 'package:siso_project/src/features/auth/domain/auth_user.dart';
 
-/// Email thuộc 5 trường Bình Thạnh (chấp nhận cả subdomain như `st.hutech.edu.vn`).
-/// Cùng quy tắc với `matchCampusDomain` ở backend.
-bool isValidCampusEmail(String email) {
-  final parts = email.trim().toLowerCase().split('@');
-  if (parts.length != 2 || parts[0].isEmpty) return false;
-  final domain = parts[1];
-  return AppConstants.allowedCampusDomains
-      .any((d) => domain == d || domain.endsWith('.$d'));
+/// Kiểm tra sơ bộ dạng `ten@mien.xx`; backend kiểm tra lại (IsEmail).
+bool isValidEmail(String email) =>
+    RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email.trim());
+
+/// Đăng nhập Google qua Firebase Auth, trả Firebase ID token; null nếu người dùng huỷ.
+/// Không giữ phiên Firebase: phiên SISO là JWT do backend ký.
+Future<String?> firebaseGoogleIdToken() async {
+  final auth = FirebaseAuth.instance;
+  try {
+    final credential = await auth.signInWithProvider(
+      GoogleAuthProvider()..setCustomParameters({'prompt': 'select_account'}),
+    );
+    final token = await credential.user?.getIdToken();
+    await auth.signOut();
+    return token;
+  } on FirebaseAuthException catch (e) {
+    if (e.code.contains('cancel')) return null;
+    throw SisoException(
+      code: SisoErrorCodes.googleFailed,
+      message: 'Không đăng nhập được bằng Google (${e.code}). Hãy thử lại hoặc dùng email.',
+    );
+  }
 }
 
 /// Thông báo cho lỗi không lường trước (không phải lỗi nghiệp vụ từ backend).
@@ -39,10 +55,15 @@ DateTime? jwtExpiry(String token) {
 
 /// [Dev 1] Xác thực Email sinh viên qua NestJS REST API (`/api/v1/auth/*`).
 class AuthRepository {
-  AuthRepository({Dio? dio, TokenStorage? storage, DateTime Function()? clock})
-      : _dioOverride = dio,
+  AuthRepository({
+    Dio? dio,
+    TokenStorage? storage,
+    DateTime Function()? clock,
+    Future<String?> Function()? googleIdToken,
+  })  : _dioOverride = dio,
         _storage = storage ?? SecureTokenStorage(),
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now,
+        _googleIdTokenOverride = googleIdToken;
 
   static const tokenKey = 'siso_access_token';
   static const userKey = 'siso_user';
@@ -50,28 +71,35 @@ class AuthRepository {
   final Dio? _dioOverride;
   final TokenStorage _storage;
   final DateTime Function() _clock;
+  final Future<String?> Function()? _googleIdTokenOverride;
+
+  /// Nút Google chỉ hiện khi Firebase đã khởi tạo (máy thật có google-services.json / GoogleService-Info.plist).
+  bool get googleAvailable {
+    if (_googleIdTokenOverride != null) return true;
+    if (kIsWeb) return false;
+    try {
+      return Firebase.apps.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Dio get _dio => _dioOverride ?? ApiClient.dio;
 
-  /// Bước 1: gửi OTP về email trường.
+  /// Bước 1: gửi OTP về email (email bất kỳ).
   Future<OtpRequestResult> requestOtp(String rawEmail) async {
     final email = rawEmail.trim().toLowerCase();
-    if (!isValidCampusEmail(email)) {
-      throw const SisoException(
-        code: SisoErrorCodes.invalidDomain,
-        message: 'SISO hiện chỉ hỗ trợ email HUTECH, UEF, UTH, FTU2, HIU.',
-      );
-    }
-
-    final body = await _post('/api/v1/auth/edu-login', {'email': email});
+    final body = await _post('/api/v1/auth/email-login', {'email': email});
     final data = body['data'] as Map<String, dynamic>;
     return OtpRequestResult(
       email: data['email'] as String,
       message: body['message'] as String? ?? '',
       expiresInSeconds: data['expiresInSeconds'] as int,
       resendAfterSeconds: data['resendAfterSeconds'] as int,
-      university:
-          CampusInfo.fromJson(data['university'] as Map<String, dynamic>),
+      university: switch (data['university']) {
+        Map<String, dynamic> u => CampusInfo.fromJson(u),
+        _ => null,
+      },
       sentAt: _clock(),
     );
   }
@@ -82,6 +110,32 @@ class AuthRepository {
       'email': rawEmail.trim().toLowerCase(),
       'otp': otp.trim(),
     });
+    return _saveSession(body);
+  }
+
+  /// Đăng nhập Google: lấy Firebase ID token rồi đổi lấy JWT SISO. Trả null nếu người dùng huỷ.
+  Future<AuthUser?> signInWithGoogle() async {
+    final idToken = await (_googleIdTokenOverride ?? firebaseGoogleIdToken)();
+    if (idToken == null) return null;
+    return _saveSession(await _post('/api/v1/auth/google', {'idToken': idToken}));
+  }
+
+  /// Chọn / đổi Trường: Trường có sẵn ([universityId]) hoặc thêm mới ([name] + [shortName] + [district]).
+  /// Server trả phiên mới (JWT mang universityId) nên lưu lại như lúc đăng nhập.
+  Future<AuthUser> chooseUniversity({String? universityId, String? name, String? shortName, String? district}) async {
+    try {
+      final response = await _dio.put('/api/v1/universities/mine', data: {
+        if (universityId != null) 'universityId': universityId,
+        if (universityId == null) ...{'name': name?.trim(), 'shortName': shortName?.trim(), 'district': district},
+      });
+      return await _saveSession(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw mapAuthError(e);
+    }
+  }
+
+  /// Lưu JWT + hồ sơ vào secure storage và gắn token vào ApiClient.
+  Future<AuthUser> _saveSession(Map<String, dynamic> body) async {
     final data = body['data'] as Map<String, dynamic>;
     final token = data['accessToken'] as String;
     final user = AuthUser.fromJson(data['user'] as Map<String, dynamic>);

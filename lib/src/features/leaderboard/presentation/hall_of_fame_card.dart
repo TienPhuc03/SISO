@@ -5,9 +5,11 @@ import '../../../core/theme/siso_theme.dart';
 import '../domain/leaderboard_models.dart';
 import '../providers/season_rank_provider.dart';
 
-/// Thẻ Đại sảnh Danh vọng: Quán quân của các Mùa giải đã qua, mới nhất trước.
+/// Thẻ Đại sảnh Danh vọng: Quán quân của [cluster] qua các Mùa giải, mới nhất trước.
 class HallOfFameCard extends ConsumerWidget {
-  const HallOfFameCard({super.key});
+  const HallOfFameCard({super.key, this.cluster});
+
+  final String? cluster;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,14 +29,14 @@ class HallOfFameCard extends ConsumerWidget {
             const SizedBox(height: 12),
             const Divider(height: 1, color: SisoColors.border),
             const SizedBox(height: 12),
-            ref.watch(hallOfFameProvider).when(
+            ref.watch(hallOfFameProvider(cluster)).when(
                   loading: () => const Center(child: CircularProgressIndicator()),
                   error: (_, __) => _Retry(
                     message: 'Không tải được Đại sảnh Danh vọng.',
-                    onRetry: () => ref.invalidate(hallOfFameProvider),
+                    onRetry: () => ref.invalidate(hallOfFameProvider(cluster)),
                   ),
                   data: (entries) => entries.isEmpty
-                      ? const Text('Chưa có Quán quân. Mùa giải đầu tiên vẫn đang diễn ra.')
+                      ? const Text('Chưa có Quán quân của Cụm này.')
                       : Column(children: [for (final e in entries) _ChampionRow(entry: e)]),
                 ),
           ],

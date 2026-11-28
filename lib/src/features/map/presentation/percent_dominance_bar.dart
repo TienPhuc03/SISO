@@ -7,7 +7,7 @@ import '../../leaderboard/domain/leaderboard_models.dart';
 import '../../leaderboard/providers/season_rank_provider.dart';
 import '../providers/map_state_notifier.dart';
 
-/// [Dev A] Dual-Metric Live HUD: % Lãnh thổ chiếm đóng & % Km cống hiến của 5 trường.
+/// [Dev A] Dual-Metric Live HUD: % Lãnh thổ chiếm đóng & % Km cống hiến của các Trường cùng Cụm.
 class PercentDominanceBar extends ConsumerWidget {
   const PercentDominanceBar({super.key});
 
@@ -18,8 +18,8 @@ class PercentDominanceBar extends ConsumerWidget {
     final owned = cells.values.where((c) => !c.isNeutral).length;
     final totalKm = scores.fold<double>(0, (sum, s) => sum + s.totalKm);
     final session = ref.watch(authSessionProvider);
-    final myCode = session is AuthSignedIn ? session.user.university.shortCode : null;
-    final mine = scores.where((s) => s.shortName == myCode).firstOrNull;
+    final myId = session is AuthSignedIn ? session.user.university?.id : null;
+    final mine = scores.where((s) => s.universityId == myId).firstOrNull;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -38,7 +38,7 @@ class PercentDominanceBar extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(color: SisoColors.tint, borderRadius: BorderRadius.circular(99)),
-                child: const Text('Bình Thạnh',
+                child: const Text('Cụm của bạn',
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: SisoColors.primary)),
               ),
             ],

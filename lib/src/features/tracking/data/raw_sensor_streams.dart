@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
@@ -42,6 +43,32 @@ abstract class RawSensorStreams {
   Future<String?> ensureLocationPermission();
 }
 
+/// Cấu hình GPS theo nền tảng, ~1 lần/giây, độ chính xác cao nhất.
+/// - Android: chạy foreground service kèm thông báo cố định; không có thì khi tắt màn hình Android
+///   ngừng GPS, ngừng gia tốc kế (Android 9+) và có thể dừng app giữa Phiên chạy.
+/// - iOS: `UIBackgroundModes: location` trong Info.plist đã giữ app chạy ở nền.
+LocationSettings gpsLocationSettings(TargetPlatform platform) => platform == TargetPlatform.android
+    ? AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 1),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'SISO đang ghi Phiên chạy',
+          notificationText: 'Đang dùng GPS để tính quãng đường, kể cả khi tắt màn hình.',
+          notificationChannelName: 'Phiên chạy',
+          // App chỉ có drawable/ic_launcher; mặc định của geolocator là mipmap (không có) nên phải chỉ rõ.
+          notificationIcon: AndroidResource(name: 'ic_launcher', defType: 'drawable'),
+          setOngoing: true,
+          enableWakeLock: true,
+        ),
+      )
+    : AppleSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        activityType: ActivityType.fitness,
+        distanceFilter: 0,
+        pauseLocationUpdatesAutomatically: false,
+      );
+
 /// Cảm biến thật của thiết bị: `sensors_plus` 50 Hz + `geolocator` (độ chính xác cao nhất).
 class DeviceSensorStreams implements RawSensorStreams {
   const DeviceSensorStreams({this.accelPeriod = const Duration(milliseconds: 20)});
@@ -57,12 +84,7 @@ class DeviceSensorStreams implements RawSensorStreams {
 
   @override
   Stream<GpsReading> gps() => Geolocator.getPositionStream(
-        locationSettings: AppleSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          activityType: ActivityType.fitness,
-          distanceFilter: 0,
-          pauseLocationUpdatesAutomatically: false,
-        ),
+        locationSettings: gpsLocationSettings(defaultTargetPlatform),
       ).map(
         (p) => GpsReading(
           lat: p.latitude,

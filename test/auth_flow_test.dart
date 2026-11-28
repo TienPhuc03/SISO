@@ -6,12 +6,16 @@ import 'package:siso_project/src/features/auth/data/auth_repository.dart';
 import 'package:siso_project/src/features/auth/domain/auth_user.dart';
 import 'package:siso_project/src/features/auth/presentation/auth_gate.dart';
 import 'package:siso_project/src/features/auth/providers/auth_provider.dart';
+import 'package:siso_project/src/features/university/providers/university_providers.dart';
+
+import 'university_test.dart' show FakeUniversityRepository;
 
 const hutech = CampusInfo(
   id: 'uni-hutech',
   shortCode: 'HUTECH',
   name: 'ĐH Công Nghệ TP.HCM (HUTECH)',
   color: '#FFCC00',
+  clusterCode: 'NORTH',
 );
 const student = AuthUser(
   id: 'u1',
@@ -34,6 +38,26 @@ class FakeAuthRepository implements AuthRepository {
   final List<String> otpRequests = [];
   final List<String> verifyAttempts = [];
   int logoutCalls = 0;
+  bool google = false;
+  AuthUser? googleUser;
+
+  @override
+  bool get googleAvailable => google;
+
+  @override
+  Future<AuthUser?> signInWithGoogle() async => googleUser;
+
+  /// Lần gọi chọn Trường gần nhất; [chooseResult] là hồ sơ server trả về.
+  Map<String, String?>? chosen;
+  AuthUser chooseResult = student;
+  Object? chooseError;
+
+  @override
+  Future<AuthUser> chooseUniversity({String? universityId, String? name, String? shortName, String? district}) async {
+    chosen = {'universityId': universityId, 'name': name, 'shortName': shortName, 'district': district};
+    if (chooseError != null) throw chooseError!;
+    return chooseResult;
+  }
 
   @override
   Future<AuthUser?> restoreSession() async {
@@ -84,7 +108,10 @@ void main() {
   Future<void> pumpApp(WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [authRepositoryProvider.overrideWithValue(repo)],
+        overrides: [
+          authRepositoryProvider.overrideWithValue(repo),
+          universityRepositoryProvider.overrideWithValue(FakeUniversityRepository()),
+        ],
         child: const MaterialApp(home: AuthGate()),
       ),
     );
@@ -123,7 +150,7 @@ void main() {
   });
 
   group('LoginScreen', () {
-    testWidgets('email trống hoặc ngoài 5 trường: báo lỗi, không gọi API',
+    testWidgets('email trống hoặc sai định dạng: báo lỗi, không gọi API',
         (tester) async {
       await pumpApp(tester);
 
@@ -134,14 +161,52 @@ void main() {
       expect(find.text('Vui lòng không để trống email'), findsOneWidget);
 
       await tester.enterText(
-          find.byKey(const Key('login_email')), 'a@gmail.com');
+          find.byKey(const Key('login_email')), 'a@gmail');
       await tester.ensureVisible(find.byKey(
           const Key('login_submit'))); // màn thấp: nút nằm dưới, phải cuộn tới
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pump();
-      expect(find.text('SISO hiện chỉ hỗ trợ HUTECH, UEF, UTH, FTU2, HIU'),
-          findsOneWidget);
+      expect(find.text('Email không hợp lệ'), findsOneWidget);
       expect(repo.otpRequests, isEmpty);
+    });
+
+    testWidgets('gmail cũng được gửi OTP', (tester) async {
+      await pumpApp(tester);
+      await tester.enterText(find.byKey(const Key('login_email')), 'A@Gmail.com');
+      await tester.ensureVisible(find.byKey(const Key('login_submit')));
+      await tester.tap(find.byKey(const Key('login_submit')));
+      await tester.pumpAndSettle();
+      expect(repo.otpRequests, ['a@gmail.com']);
+    });
+
+    testWidgets('không có Firebase thì ẩn nút Google', (tester) async {
+      await pumpApp(tester);
+      expect(find.byKey(const Key('login_google')), findsNothing);
+    });
+
+    testWidgets('Google: đăng nhập tài khoản chưa có Trường -> màn chọn Trường', (tester) async {
+      repo
+        ..google = true
+        ..googleUser = const AuthUser(id: 'u2', email: 'a@gmail.com', displayName: 'a', university: null);
+      await pumpApp(tester);
+
+      await tester.ensureVisible(find.byKey(const Key('login_google')));
+      await tester.tap(find.byKey(const Key('login_google')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('uni_picker')), findsOneWidget);
+      expect(find.text(mapTitle), findsNothing);
+    });
+
+    testWidgets('Google: người dùng huỷ -> vẫn ở màn đăng nhập', (tester) async {
+      repo.google = true;
+      await pumpApp(tester);
+
+      await tester.ensureVisible(find.byKey(const Key('login_google')));
+      await tester.tap(find.byKey(const Key('login_google')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('login_email')), findsOneWidget);
     });
 
     testWidgets('email hợp lệ: gửi OTP và mở màn nhập mã', (tester) async {

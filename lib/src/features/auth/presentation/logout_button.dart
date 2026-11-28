@@ -11,7 +11,7 @@ class LogoutButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authSessionProvider);
-    final campus = session is AuthSignedIn ? session.user.university.shortCode : null;
+    final campus = session is AuthSignedIn ? session.user.university?.shortName : null;
 
     return SisoCircleButton(
       key: const Key('logout_button'),
@@ -23,6 +23,8 @@ class LogoutButton extends ConsumerWidget {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
+            actionsOverflowAlignment: OverflowBarAlignment.center,
+            actionsOverflowDirection: VerticalDirection.up,
             title: const Text('Đăng xuất?'),
             content: const Text('Bạn sẽ cần nhập lại email và mã OTP để vào lại.'),
             actions: [

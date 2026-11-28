@@ -10,7 +10,8 @@ import { ProfileDto } from './dto/profile.dto';
 export const MAX_AVATAR_BYTES = 512 * 1024;
 
 /** Nhận diện ảnh theo byte đầu file: không tin tên file hay Content-Type client gửi. */
-function sniffImageType(bytes: Buffer): string | null {
+/** Nhận dạng JPEG / PNG / WebP theo byte đầu file (không tin đuôi file); dùng chung cho ảnh diễn đàn. */
+export function sniffImageType(bytes: Buffer): string | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
   if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
     return 'image/png';
@@ -49,7 +50,12 @@ export class ProfileService {
       completedRuns,
       avatarUrl: avatar ? `/api/v1/profile/avatar/${user.id}?v=${avatar.updated_at.getTime()}` : null,
       university: user.university
-        ? { shortCode: user.university.short_code, name: user.university.name, color: user.university.hex_color }
+        ? {
+            shortCode: user.university.short_code,
+            shortName: user.university.short_name ?? user.university.short_code,
+            name: user.university.name,
+            color: user.university.hex_color,
+          }
         : null,
     };
   }
